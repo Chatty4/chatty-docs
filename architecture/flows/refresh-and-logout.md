@@ -48,7 +48,7 @@ chatty-chat also verifies access tokens — it shares the public key and checks 
 
 ### Refreshing
 
-4. The web app calls `POST /api/core/v1/auth/refresh` with the current refresh token in the request body.
+4. The web app calls `POST /api/core/v1/auth/refresh` with the current refresh token in the request body. This endpoint ignores the `Authorization` header, so the expired access token the web app still attaches does not cause a `401` before the body is read.
 5. chatty-core hashes the raw token (SHA-256) and, inside a `SELECT ... FOR UPDATE` transaction, looks up the row.
 6. If the row does not exist or has expired, `401 invalid_refresh_token`.
 7. **If the token is already revoked, chatty-core treats it as a theft signal.** It revokes _all_ active refresh tokens for that user (every device is logged out) and returns `401`. This is refresh-token reuse detection.
