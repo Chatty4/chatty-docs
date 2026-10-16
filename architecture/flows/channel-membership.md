@@ -23,7 +23,7 @@ sequenceDiagram
     alt not in the channel / a DM
         C-->>W: 403 not_a_member / 400 cannot_leave_dm
     else allowed
-        C->>DB: BEGIN; SELECT channel FOR UPDATE (lock)
+        C->>DB: BEGIN, then SELECT channel FOR UPDATE (lock)
         C->>DB: SELECT owners of the channel
         C->>DB: DELETE my membership
         opt private channel and I was the only owner
