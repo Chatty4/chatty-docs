@@ -42,7 +42,7 @@ TODO
 ## ⚠️ Known gaps
 
 - Changes to teams and channels are not sent to chatty-chat yet (CHAT-172).
-- No DMs and no per-channel settings yet.
+- Rate limits are skipped while Redis is down (fail open).
 
 Full list: [known limitations](../../architecture/known-limitations.md#teams-and-channels).
 

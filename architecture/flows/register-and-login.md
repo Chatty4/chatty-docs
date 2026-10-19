@@ -65,7 +65,7 @@ sequenceDiagram
 | Step | What happens |
 |---|---|
 | 3, rate limit exceeded | `429 rate_limited` with `Retry-After` |
-| 3, Redis is down | `500` — the pipeline call throws; chatty-core does not bypass the rate limit |
+| 3, 8 or 10, Redis is down | The rate limit is skipped (fail open) and an error is logged; the request goes on as if under the limit |
 | 4/5, email taken | `409 email_taken` |
 | 8, email or IP already blocked | `429 too_many_attempts` with `Retry-After` |
 | 10, this request goes over the limit | `429 too_many_attempts` with `Retry-After` (no hash is run) |
