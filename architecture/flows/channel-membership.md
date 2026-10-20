@@ -45,7 +45,7 @@ sequenceDiagram
 
 1. chatty-core checks that I'm in the channel and that it isn't a DM. DMs can only be hidden.
 2. In one transaction it locks the channel row, reads the owners, and deletes my membership.
-3. If the channel is private and I was its only owner, the member who joined first (oldest `joined_at`) becomes the owner. In a public channel nobody is promoted: team owners and admins can still manage it.
+3. If the channel is private and no active owner other than me is left, the active member who joined first (oldest `joined_at`) becomes the owner. Deactivated users don't count as owners and are never promoted. In a public channel nobody is promoted: team owners and admins can still manage it.
 4. Returns `204`.
 
 **Remove someone** (`DELETE /channels/{channel_id}/members/{user_id}`)
