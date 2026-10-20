@@ -10,8 +10,9 @@ A flow follows one user journey across services. Each page has a picture first, 
 | [Refresh and logout](refresh-and-logout.md) | How does a user stay logged in? How does one device log out? | web, core |
 | [Change password](change-password.md) | Why does this device stay logged in while the others are logged out? | web, core |
 | [Join, leave and owner hand-off](channel-membership.md) | Who can join or leave a channel, and who owns it after the owner leaves? | web, core |
+| [Teams and invites](teams-and-invites.md) | How does a team start, and how does a new person get in with a link? | web, core, Redis |
 
-Planned, once the features exist: teams and invites, messages, file upload, events between core and chat.
+Planned, once the features exist: messages, file upload, events between core and chat.
 
 ## How to read a flow page
 

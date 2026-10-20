@@ -50,6 +50,7 @@ The token is set in both services via the `CORE_SERVICE_TOKEN` environment varia
 | `POST /auth/register` | 10 attempts | 1 hour | per client IP |
 | `POST /auth/login` (failures only) | 5 failures | 15 minutes | per email AND per IP (either triggers) |
 | `POST /auth/password` (wrong old password) | 5 failures | 15 minutes | per user ID |
+| `GET /invites/{invite_code}` and `POST /invites/{invite_code}/join` | 30 together | 1 minute | per client IP |
 
 A success on `/auth/login` does not count against the limit.
 
