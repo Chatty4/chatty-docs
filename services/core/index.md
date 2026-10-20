@@ -19,7 +19,7 @@ TODO
 | Area | What it does | Contract |
 |---|---|---|
 | Auth and profile | Register, login, refresh, logout, change password; `GET` / `PUT /me` with my teams | `api-core.md` |
-| Teams | Create, rename, delete; directory and roles; leave (the last owner can't) | `api-core.md` |
+| Teams | Create, rename, delete; directory and roles; leave (the last active owner can't) | `api-core.md` |
 | Invites | Create, list and revoke invite links; open one and join the team | `api-core.md` |
 | Channels | Create, browse, rename, archive; join, leave, add and remove members | `api-core.md` |
 
@@ -34,6 +34,10 @@ TODO
 **Every channel keeps an owner.** When the last owner of a private channel leaves or is removed, the
 member who joined first becomes the owner. See the flow
 [join, leave and owner hand-off](../../architecture/flows/channel-membership.md).
+
+**Every team keeps an active owner.** Deactivated owners don't count as owners. When a team's only
+active owner is deactivated, the active admin who joined first becomes owner, or else the active member
+who joined first. Deactivating a user also revokes every open invite they created.
 
 ## If something is down
 
