@@ -31,8 +31,10 @@ without foreign keys (D-01).
 
 ## Redis
 
-Shared by both services. chatty-core uses it only for rate-limit counters today. Each key is a counter
-that expires at the end of its window. If Redis is down, the limits are skipped (fail open).
+Shared by both services. chatty-core uses it for rate-limit counters, chatty-chat for its cache.
+
+chatty-core's keys are counters that expire at the end of their window. If Redis is down, the limits are
+skipped (fail open).
 
 | Key | Counts | Limit |
 |---|---|---|
@@ -44,8 +46,15 @@ that expires at the end of its window. If Redis is down, the limits are skipped 
 
 `{ip}` is the client's real IP behind Nginx (D-09).
 
-**Planned:** the `core.events` pub/sub channel (CHAT-172, D-08) and chatty-chat's `members:*` and
-`channel:*` cache keys.
+chatty-chat caches chatty-core's internal answers (api-internal.md, Caching). If Redis is down, it asks
+chatty-core directly.
+
+| Key | Holds | Expires |
+|---|---|---|
+| `members:{user_id}` | The user's memberships response: `is_active`, teams, channels (D-07) | 5 minutes |
+| `channel:{channel_id}` | One channel with its members and their notification settings | 5 minutes |
+
+**Planned:** the `core.events` pub/sub channel (CHAT-172, D-08), which clears these keys right away (CHAT-187).
 
 ## MinIO
 
