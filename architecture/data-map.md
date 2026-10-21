@@ -18,8 +18,16 @@ Owned by chatty-core. Nobody else reads or writes it. All IDs are UUIDs (D-01).
 
 ## chat_db (Postgres)
 
-Owned by chatty-chat. No tables yet. **Planned**: messages and what hangs off them, see
-[api-chat.md](https://github.com/Chatty4/chatty-infra/blob/dev/docs/api-chat.md).
+Owned by chatty-chat. IDs from chatty-core (`channel_id`, `user_id`, `author_id`, `file_id`) are stored
+without foreign keys (D-01).
+
+| Table | One row is | Worth knowing |
+|---|---|---|
+| `channel_counters` | A channel's seq counter | `last_seq` is the last number handed out. Locked with `SELECT ... FOR UPDATE` to take the next one, so `seq` is per channel, not global |
+| `messages` | A message | `seq` is unique per channel; history pages by it. `(author_id, client_msg_id)` is unique, so a retried send returns the original. Deleting sets `deleted_at` and keeps `id` and `seq` |
+| `channel_events` | A change in a channel | Kept 30 days, read by `after_seq` and `POST /sync`. Also the outbox: `published_at` is null until the relay sends it |
+| `attachments` | A file on a message | What chatty-core's `attach` returned (D-03). Removed with its message (on delete cascade) |
+| `read_state` | How far a user read a channel | `last_read_seq`; unread = messages after it. Sending moves the sender's own position |
 
 ## Redis
 
