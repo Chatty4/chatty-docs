@@ -18,5 +18,5 @@ Why Chatty looks this way. The full list with status is in [chatty-infra/docs/de
 | D-10 | Access tokens stay valid until they expire (15 minutes), even after logout | No lookup on every request in either service |
 | D-11 | Any member can create invites that never expire | Owners and admins see and revoke every invite, and a member's invites are revoked when they leave |
 
-**Status:** all accepted. **Built today:** D-01, D-09, D-10, D-11. The others wait for files, chatty-chat or
-CHAT-172.
+**Status:** all accepted. **Built today:** D-01, D-06, D-07, D-08, D-09, D-10, D-11. The others wait for
+files, messages in chatty-chat or the web app.

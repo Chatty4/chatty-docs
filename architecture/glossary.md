@@ -23,4 +23,4 @@ Plain meanings for the hard words.
 | Fail open | When Redis is down, the rate limits are skipped instead of blocking everyone |
 | Cursor pagination | Lists come in pages; the response has `next_cursor` to ask for the next page |
 | Contract | The exact request and response of an endpoint or event, in chatty-infra/docs |
-| `core.events` | The Redis channel chatty-core will publish changes on, for chatty-chat (**planned**, CHAT-172) |
+| `core.events` | The Redis channel chatty-core publishes membership, role, channel, team and deactivation changes on; chatty-chat listens and clears its cache |
