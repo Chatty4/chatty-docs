@@ -59,8 +59,9 @@ chatty-core directly.
 |---|---|---|
 | `core.events` | chatty-core's 5 events (`membership.changed`, `team.member.changed`, `channel.updated`, `team.deleted`, `user.deactivated`), published after each change commits ([core-events.md](https://github.com/Chatty4/chatty-infra/blob/dev/docs/core-events.md), D-06, D-08) | No: a subscriber that isn't connected misses the event |
 
-**Planned:** chatty-chat's `core.events` subscriber, which clears the cache keys above right away
-(CHAT-187).
+chatty-chat listens to `core.events` and deletes the cache keys an event makes stale. Every time it
+subscribes (at start and after Redis comes back) it deletes all `members:*` and `channel:*` keys, because
+events sent while it wasn't subscribed are lost (D-08). Code: `chatty-chat/app/clients/core_events.py`.
 
 ## MinIO
 

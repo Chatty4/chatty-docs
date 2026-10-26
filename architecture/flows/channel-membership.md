@@ -67,7 +67,7 @@ second leave wait and then read the owners again, so it sees the promotion and h
 | The channel doesn't exist, or its team was deleted | `404 channel_not_found` |
 | Join: I'm not in the team | `403 not_a_team_member` |
 | Join: private channel or DM | `403 cannot_join_private` |
-| Join: archived channel | `409 channel_archived` |
+| Join: archived channel I'm not in | `409 channel_archived`. Already a member: `200`, nothing changes |
 | Leave: I'm not in the channel | `403 not_a_member` |
 | Leave: a DM | `400 cannot_leave_dm` |
 | Remove: I'm not the channel owner, a team owner or an admin | `403 forbidden` |
@@ -77,7 +77,7 @@ second leave wait and then read the owners again, so it sees the promotion and h
 
 ## ⚠️ Known gaps
 
-- **chatty-chat isn't told yet.** `membership.changed` is not published until CHAT-172, so a removed user can keep receiving the channel's events until chatty-chat's cache expires.
+- **Open WebSockets aren't updated yet.** Every new join, leave and remove publishes `membership.changed`, and chatty-chat clears its cache right away. But a removed user's open WebSocket keeps the channel until they reconnect or their token expires ([CHAT-185](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-185)).
 - **The last person can leave a private channel.** It then has no members and no owner. Team owners and admins can still manage it.
 
 ## Key code
@@ -86,6 +86,6 @@ second leave wait and then read the owners again, so it sees the promotion and h
 |---|---|
 | `channels/views.py` | `JoinChannelView`, `LeaveChannelView`, `ChannelMemberDetailView` |
 | `channels/services.py` | `ChannelService.join`, `leave`, `remove_member`, `_leave_sync` (the transaction) |
-| `channels/repositories.py` | `ChannelMemberRepository.get_or_create`, `lock_owner_ids_sync` (the channel-row lock), `promote_first_joined_sync` |
+| `channels/repositories/members.py` | `ChannelMemberRepository.get_or_create`, `lock_owner_ids_sync` (the channel-row lock), `promote_first_joined_sync` |
 | `channels/access.py` | Who can read, write and manage a channel |
 | `tests/channels/test_leave_race.py` | The two-leaves-at-once race, run in two threads like two workers |

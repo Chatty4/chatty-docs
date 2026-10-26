@@ -12,7 +12,7 @@ What is not right yet, grouped by theme.
 
 ## Teams and channels
 
-- **chatty-chat doesn't listen to `core.events` yet.** chatty-core publishes every membership, role, channel, team and deactivation change on `core.events` (CHAT-172), but chatty-chat only starts reacting with CHAT-187. Until then it sees these changes only when its cache expires (5 minutes), so for that long someone removed from a channel can still receive its events.
+- **Open WebSockets don't follow membership changes yet.** chatty-chat listens to `core.events` and clears its cache right away (CHAT-187), so new requests see the change. But a WebSocket keeps the channel list it loaded when it connected: someone removed from a channel or deactivated keeps receiving that channel's events until they reconnect or their access token expires (up to 15 minutes). Fixed by [CHAT-185](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-185).
 - **No unarchive.** An archived channel stays read-only; there is no endpoint to undo it.
 
 ## Infra

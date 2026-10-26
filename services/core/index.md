@@ -8,9 +8,10 @@ Django: users, auth, teams, channels, files.
 |---|---|
 | Stack | Python 3.14, Django 6.1, DRF with async views, uvicorn (ASGI) |
 | Public API | `/api/core/v1`, contract in [api-core.md](https://github.com/Chatty4/chatty-infra/blob/dev/docs/api-core.md) |
-| Internal API | `/internal` for chatty-chat, **planned**, contract in [api-internal.md](https://github.com/Chatty4/chatty-infra/blob/dev/docs/api-internal.md) |
+| Internal API | `/internal` for chatty-chat, contract in [api-internal.md](https://github.com/Chatty4/chatty-infra/blob/dev/docs/api-internal.md) |
+| Events | Publishes `core.events` on Redis, contract in [core-events.md](https://github.com/Chatty4/chatty-infra/blob/dev/docs/core-events.md) |
 | Health | `GET /health` |
-| Stores | Postgres `core_db`, Redis (rate limits). See the [data map](../../architecture/data-map.md) |
+| Stores | Postgres `core_db`, Redis (rate limits, `core.events`). See the [data map](../../architecture/data-map.md) |
 | Local address | <http://127.0.0.1:8000> |
 
 ## Who talks to it
@@ -19,8 +20,8 @@ Django: users, auth, teams, channels, files.
 |---|---|---|
 | chatty-web (the browser) | `/api/core/v1` | works |
 | Platform admins | `/admin/` (Django admin) | works |
-| chatty-chat | `/internal` | **planned** |
-| chatty-chat | listens to `core.events` on Redis | **planned** (CHAT-172) |
+| chatty-chat | `/internal`: a user's memberships, one channel with its members | works |
+| chatty-chat | listens to `core.events` on Redis | works |
 
 ## How it checks callers
 
@@ -68,14 +69,15 @@ refresh tokens. See the flow [teams and invites](../../architecture/flows/teams-
 | Down | What happens | `/health` |
 |---|---|---|
 | Postgres | Every API call fails with `500` | `503`, `"db": "error"` |
-| Redis | Everything keeps working, but rate limits are skipped (fail open) | `503`, `"redis": "error"` |
+| Redis | Everything keeps working, but rate limits are skipped (fail open) and `core.events` are not sent (logged; chatty-chat's cache expires within 5 minutes) | `503`, `"redis": "error"` |
 | chatty-chat | Nothing in chatty-core breaks | not checked |
 
 Each health check gives up after 2 seconds. Code: `config/views.py`.
 
 ## ⚠️ Known gaps
 
-- Changes to teams and channels are not sent to chatty-chat yet (CHAT-172).
+- `core.events` is pub/sub: an event sent while chatty-chat isn't subscribed is lost. chatty-chat clears
+  its whole cache when it subscribes again (D-08).
 - Rate limits are skipped while Redis is down (fail open).
 
 Full list: [known limitations](../../architecture/known-limitations.md#teams-and-channels).
@@ -90,7 +92,9 @@ Full list: [known limitations](../../architecture/known-limitations.md#teams-and
 | `users/admin.py` | The `deactivate` admin action; delete is turned off |
 | `channels/access.py` | Pure read / write / manage rules |
 | `channels/services.py` | `ChannelService`: `require_access`, join, leave, members, rename, archive |
-| `channels/repositories.py` | Channel and member queries, the channel-row lock for leave and remove |
-| `teams/services.py` | `TeamService`: teams, members, roles, owner hand-off. `InviteService`: invites and join |
+| `channels/repositories/` | Channel and member queries, the channel-row lock for leave and remove |
+| `teams/services/` | `TeamService` (`teams.py`): teams, members, roles, owner hand-off. `InviteService` (`invites.py`): invites and join |
+| `users/internal/`, `channels/internal/` | The `/internal` endpoints for chatty-chat |
+| `shared/events.py` | `publish`: sends one event on `core.events` after the change commits |
 | `shared/redis.py` | `rate_limit`: Redis counters that fail open |
 | `shared/pagination.py` | Cursor pagination used by every list |
