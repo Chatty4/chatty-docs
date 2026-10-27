@@ -12,7 +12,7 @@ What is not right yet, grouped by theme.
 
 ## Teams and channels
 
-- **Changes are not pushed to chatty-chat yet.** chatty-core does not publish `core.events` until CHAT-172, and chatty-chat does not listen until CHAT-187: joining, leaving, adding or removing channel members, renaming or archiving a channel, role changes and leaving or deleting a team. chatty-chat sees these changes only when its cache expires (5 minutes), so for that long someone removed from a channel can still receive its events.
+- **Leaving a team doesn't stop live events right away.** When a user leaves or is removed from a team, or the team is deleted, chatty-core sends only `team.member.changed` or `team.deleted`, with no `membership.changed removed` for each channel. chatty-chat doesn't unsubscribe the open sockets from the team's channels for these events yet, so the user keeps receiving those channels' events until they reconnect. Removal from a single channel is immediate (CHAT-185).
 - **No unarchive.** An archived channel stays read-only; there is no endpoint to undo it.
 
 ## Infra
