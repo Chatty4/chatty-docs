@@ -7,8 +7,8 @@ The big picture: every service, how they talk, and auth in 30 seconds.
 | Service | What it owns | Stack | Status |
 |---|---|---|---|
 | chatty-web | The app in the browser | React (Vite) | routes and placeholder pages; no screens built yet |
-| chatty-core | Users, auth, teams, invites, channels, DMs, files | Django | works, except files and `/internal` |
-| chatty-chat | Messages, the live WebSocket, reactions, search | FastAPI | `/health` only |
+| chatty-core | Users, auth, teams, invites, channels, DMs, files | Django | works, except files |
+| chatty-chat | Messages, the live WebSocket, reactions, search | FastAPI | `/health`, the WebSocket with JWT, the `core.events` cache subscriber; no messages yet |
 | chatty-infra | Docker Compose, contracts, setup scripts | | works |
 
 Each backend service has its own Postgres database. They never read each other's database; they talk
@@ -20,12 +20,12 @@ only through the contracts in [chatty-infra/docs](https://github.com/Chatty4/cha
 flowchart LR
     B[Browser: chatty-web] -->|/api/core/v1| C[chatty-core]
     B -.->|/api/chat/v1 + WebSocket, planned| H[chatty-chat]
-    H -.->|/internal + X-Service-Token, planned| C
-    C -.->|core.events on Redis, planned| H
+    H -->|/internal + X-Service-Token| C
+    C -->|core.events on Redis| H
     C --> CDB[(core_db)]
     C --> R[(Redis)]
-    H -.-> HDB[(chat_db)]
-    H -.-> R
+    H --> HDB[(chat_db)]
+    H --> R
     H -.-> K[(Kafka)]
     C -.-> M[(MinIO)]
     H -.-> M
@@ -38,9 +38,9 @@ Solid lines work today; dashed lines are planned.
 | From → to | How | What for | Status |
 |---|---|---|---|
 | web → core | HTTPS JSON, `/api/core/v1` | Accounts, teams, channels | works |
-| web → chat | HTTPS JSON and a WebSocket, `/api/chat/v1` | Messages, live events | planned |
-| chat → core | HTTP, `/internal`, `X-Service-Token` | Who is in which channel (D-07), file attach (D-03) | planned |
-| core → chat | Redis pub/sub `core.events` | "Something changed, clear your cache" (D-06, D-08) | planned (CHAT-172) |
+| web → chat | HTTPS JSON and a WebSocket, `/api/chat/v1` | Messages, live events | WebSocket connect works; messages and the web client **planned** ([CHAT-122](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-122), [CHAT-126](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-126)) |
+| chat → core | HTTP, `/internal`, `X-Service-Token` | Who is in which channel (D-07), file attach (D-03) | memberships and channel work; file attach **planned** ([CHAT-129](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-129)) |
+| core → chat | Redis pub/sub `core.events` | "Something changed, clear your cache" (D-06, D-08) | cache clearing works; updating open WebSockets **planned** ([CHAT-185](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-185)) |
 
 In production every browser request goes through chatty-web's Nginx (D-09). Locally the services are
 reached directly on `127.0.0.1`.

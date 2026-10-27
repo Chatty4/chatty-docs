@@ -12,7 +12,7 @@ What is not right yet, grouped by theme.
 
 ## Teams and channels
 
-- **Leaving a team doesn't stop live events right away.** When a user leaves or is removed from a team, or the team is deleted, chatty-core sends only `team.member.changed` or `team.deleted`, with no `membership.changed removed` for each channel. chatty-chat doesn't unsubscribe the open sockets from the team's channels for these events yet, so the user keeps receiving those channels' events until they reconnect. Removal from a single channel is immediate (CHAT-185).
+- **Deleting a team doesn't stop live events right away.** chatty-core sends only `team.deleted`, with no `membership.changed removed` for each channel, and chatty-chat doesn't unsubscribe open WebSockets from the team's channels for it yet. Members keep receiving those channels' events until they reconnect or their access token expires (up to 15 minutes). Removal from a channel, leaving or being removed from a team (CHAT-263) and deactivation are immediate ([CHAT-185](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-185)).
 - **No unarchive.** An archived channel stays read-only; there is no endpoint to undo it.
 
 ## Infra

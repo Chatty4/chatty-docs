@@ -112,8 +112,9 @@ and its invites then return `404`.
 
 ## ⚠️ Known gaps
 
-- **chatty-chat isn't told yet.** `team.member.changed` and `membership.changed` are not published until
-  CHAT-172.
+- **Open WebSockets aren't updated yet.** Create, join, leave and remove publish `team.member.changed`
+  and `membership.changed`, and chatty-chat clears its cache right away. Open WebSockets keep their
+  channel list until they reconnect ([CHAT-185](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-185)).
 - **No team icon on the invite page.** `icon_url` is always `null` until file uploads exist.
 
 ## Key code
@@ -121,6 +122,7 @@ and its invites then return `404`.
 | File | What is there |
 |---|---|
 | `teams/views.py` | `TeamsView`, `TeamInvitesView`, `InviteLookupView`, `InviteJoinView` |
-| `teams/services.py` | `TeamService._create_sync`, `InviteService.lookup`, `join`, `_join_sync` (the transaction), `_remove_member_sync` |
-| `teams/repositories.py` | `TeamRepository.lock_sync` (the team-row lock), `InviteRepository.lock_by_id_sync` |
+| `teams/services/teams.py` | `TeamService._create_sync`, `_remove_member_sync` |
+| `teams/services/invites.py` | `InviteService.lookup`, `join`, `_join_sync` (the transaction) |
+| `teams/repositories/` | `TeamRepository.lock_sync` (the team-row lock), `InviteRepository.lock_by_id_sync` |
 | `tests/teams/test_join_race.py` | Two joins on a single-use link at once, run in two threads like two workers |

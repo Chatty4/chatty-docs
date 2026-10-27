@@ -31,7 +31,8 @@ without foreign keys (D-01).
 
 ## Redis
 
-Shared by both services. chatty-core uses it for rate-limit counters, chatty-chat for its cache.
+Shared by both services. chatty-core uses it for rate-limit counters and to publish `core.events`,
+chatty-chat for its cache.
 
 chatty-core's keys are counters that expire at the end of their window. If Redis is down, the limits are
 skipped (fail open).
@@ -54,7 +55,13 @@ chatty-core directly.
 | `members:{user_id}` | The user's memberships response: `is_active`, teams, channels (D-07) | 5 minutes |
 | `channel:{channel_id}` | One channel with its members and their notification settings | 5 minutes |
 
-**Planned:** the `core.events` pub/sub channel (CHAT-172, D-08), which clears these keys right away (CHAT-187).
+| Pub/sub channel | Carries | Stored |
+|---|---|---|
+| `core.events` | chatty-core's 5 events (`membership.changed`, `team.member.changed`, `channel.updated`, `team.deleted`, `user.deactivated`), published after each change commits ([core-events.md](https://github.com/Chatty4/chatty-infra/blob/dev/docs/core-events.md), D-06, D-08) | No: a subscriber that isn't connected misses the event |
+
+chatty-chat listens to `core.events` and deletes the cache keys an event makes stale. Every time it
+subscribes (at start and after Redis comes back) it deletes all `members:*` and `channel:*` keys, because
+events sent while it wasn't subscribed are lost (D-08). Code: `chatty-chat/app/clients/core_events.py`.
 
 ## MinIO
 
