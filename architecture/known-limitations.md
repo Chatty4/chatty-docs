@@ -16,6 +16,10 @@ What is not right yet, grouped by theme.
 - **A user removed from a team can still watch its public channels until they reconnect.** chatty-chat checks a WebSocket `watch` against the memberships it loaded when the socket connected, so after leaving or being removed from a team, the user can start a new watch on that team's public channels and receive their live events until they reconnect or their access token expires (up to 15 minutes). A watch that is already running ends right away ([CHAT-231](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-231)).
 - **No unarchive.** An archived channel stays read-only; there is no endpoint to undo it.
 
+## Chat
+
+- **`/sync` has no rate limit.** Each unknown channel ID in a request is one chatty-core lookup (404s aren't cached), so one request can cause up to 500 core calls. They run at the same time since [CHAT-268](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-268), so the request is fast, but core still does the work.
+
 ## Infra
 
 - **No HTTPS in the dev stack.** All traffic between the browser, Nginx, and the service containers is plain HTTP. TLS termination is expected to happen outside this stack in any non-dev environment, but where is not decided yet. Until then chatty-core sends no HSTS header, sets no `SECURE_SSL_REDIRECT` / `SECURE_PROXY_SSL_HEADER`, and CI doesn't run `manage.py check --deploy`.
