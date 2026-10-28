@@ -32,7 +32,7 @@ without foreign keys (D-01).
 ## Redis
 
 Shared by both services. chatty-core uses it for rate-limit counters and to publish `core.events`,
-chatty-chat for its cache.
+chatty-chat for its cache and to send channel events between its processes.
 
 chatty-core's keys are counters that expire at the end of their window. If Redis is down, the limits are
 skipped (fail open).
