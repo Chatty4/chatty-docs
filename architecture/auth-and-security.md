@@ -15,6 +15,12 @@ Every authenticated request to `/api/core/v1` carries an access token in the `Au
 
 The private key never leaves chatty-core. chatty-chat receives only the public half, mounted read-only into its container.
 
+**On the WebSocket** the token goes in the URL, `GET /api/chat/v1/ws?token=<access token>`, because
+browsers can't set headers on a WebSocket. chatty-chat checks it once at connect (bad or expired: close
+`4001`) and closes the socket with `4001` when its `exp` is reached. uvicorn logs every WebSocket URL, so
+chatty-chat's `RedactTokens` log filter replaces `token=…` with `token=***` before the line is written
+(`chatty-chat/app/core/logging.py`).
+
 ## Refresh token rotation
 
 A refresh token is a 64-character random hex string prefixed with `rt_`. It is never stored raw — only its SHA-256 hash is persisted.
