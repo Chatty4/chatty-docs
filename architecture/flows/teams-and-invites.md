@@ -112,9 +112,10 @@ and its invites then return `404`.
 
 ## ⚠️ Known gaps
 
-- **Open WebSockets aren't updated yet.** Create, join, leave and remove publish `team.member.changed`
-  and `membership.changed`, and chatty-chat clears its cache right away. Open WebSockets keep their
-  channel list until they reconnect ([CHAT-185](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-185)).
+- **Deleting a team doesn't stop live events right away.** Create, join, leave and remove publish
+  `team.member.changed` and `membership.changed`, and chatty-chat updates its cache and open WebSockets
+  right away ([core events](core-events.md)). Delete only publishes `team.deleted`, and open sockets stay
+  subscribed to the team's channels; those are read-only, so no new events arrive.
 - **No team icon on the invite page.** `icon_url` is always `null` until file uploads exist.
 
 ## Key code

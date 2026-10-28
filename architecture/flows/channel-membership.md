@@ -60,6 +60,10 @@ re-check only the rows it had already matched. It would miss that the first leav
 it to owner, delete itself, and leave the channel without an owner. Locking the channel row makes the
 second leave wait and then read the owners again, so it sees the promotion and hands the channel on.
 
+**Live updates.** Every join, leave and remove publishes `membership.changed` after the commit. chatty-chat
+clears its cached answers and the user's open WebSockets join or leave the channel right away, so a
+removed user stops getting its events at once ([core events](core-events.md)).
+
 ## If a step fails
 
 | Step | What happens |
@@ -77,7 +81,6 @@ second leave wait and then read the owners again, so it sees the promotion and h
 
 ## ⚠️ Known gaps
 
-- **Open WebSockets aren't updated yet.** Every new join, leave and remove publishes `membership.changed`, and chatty-chat clears its cache right away. But a removed user's open WebSocket keeps the channel until they reconnect or their token expires ([CHAT-185](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-185)).
 - **The last person can leave a private channel.** It then has no members and no owner. Team owners and admins can still manage it.
 
 ## Key code
