@@ -9,7 +9,7 @@ Docker Compose, contracts, setup scripts.
 | Runs | `docker-compose.yml`: core-db, chat-db, redis, minio, kafka, core, chat |
 | Contracts | `docs/`: `api-core.md`, `api-chat.md`, `api-internal.md`, `core-events.md`, `events.md`, `decisions.md` |
 | Scripts | `setup.bat`, `start.bat`, `stop.bat`, `restart.bat`, `migrate.bat`, `logs.bat`, `status.bat`, `test.bat`, `shell.bat`, `reset-db.bat`; `chatty.bat` is a menu for all of them |
-| Postman | `postman/`: a collection with every chatty-core endpoint, and a local environment |
+| Postman | `postman/`: a collection with every HTTP endpoint of chatty-core (public and `/internal`) and chatty-chat, and a local environment. The WebSocket can't be stored in a collection: open it in Postman with New > WebSocket |
 
 How to start and which ports: the [chatty-infra README](https://github.com/Chatty4/chatty-infra#readme).
 
