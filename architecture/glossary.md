@@ -23,4 +23,15 @@ Plain meanings for the hard words.
 | Fail open | When Redis is down, the rate limits are skipped instead of blocking everyone |
 | Cursor pagination | Lists come in pages; the response has `next_cursor` to ask for the next page |
 | Contract | The exact request and response of an endpoint or event, in chatty-infra/docs |
-| `core.events` | The Redis channel chatty-core publishes membership, role, channel, team and deactivation changes on; chatty-chat listens and clears its cache |
+| `core.events` | The Redis channel chatty-core publishes membership, role, channel, team and deactivation changes on; chatty-chat listens, clears its cache and updates open WebSockets |
+| `seq` | A channel's own counter. Every message, edit and delete takes the next number, so `seq` gives the order of everything in a channel and shows gaps |
+| `client_msg_id` | A UUID the web app makes for each message. Sending it again returns the first message instead of a second one |
+| Channel event | One change in a channel (`message.created`, `message.edited`, `message.deleted`) with its `seq`. Stored in `channel_events` and sent live |
+| Pub/sub | Redis channels that pass a message to whoever listens at that moment. Nothing is stored |
+| Gateway | The part of each chatty-chat process that holds its WebSockets: one Redis subscription, forwarding events to the local sockets |
+| Heartbeat | The message the web app sends every 20 s on the WebSocket. None for 60 s closes the socket |
+| Watch | Following one public channel on the WebSocket without joining it |
+| Sync | Getting the events missed while offline: `POST /sync` with the last `seq` of each channel |
+| Cache hit / miss | Hit: the answer is in Redis. Miss: it isn't, so chatty-chat asks chatty-core and stores it |
+| Version counter | A Redis counter per cached key that events increment; a cache write is refused if it changed meanwhile |
+| Close code | The number a WebSocket is closed with; it tells the web app whether to refresh the token, log out or just reconnect |
