@@ -2,8 +2,9 @@
 
 > **In one minute:** Only the author can edit a message. The author can always delete it; in public and
 > private channels the channel owner and team owners and admins can delete it too, in DMs only the author
-> (D-05). Delete is soft: the message keeps its place and `seq` but loses its text. Both take the channel's
-> next `seq`, write an event row and publish it after the commit, like sending.
+> (D-05). Delete is soft: the message keeps its place and `seq` but loses its text and its reactions, and
+> its text is also cleared in the earlier events. Both take the channel's next `seq`, write an event row and
+> publish it after the commit, like sending.
 
 ## The picture
 
@@ -34,6 +35,8 @@ sequenceDiagram
     else allowed
         H->>DB: BEGIN, next seq
         H->>DB: UPDATE message: body "", mentions [], deleted_at (only if not deleted yet)
+        H->>DB: Clear body and mentions in its earlier created / edited events
+        H->>DB: DELETE its reactions
         H->>DB: INSERT channel_events message.deleted
         H->>DB: COMMIT
         H->>R: PUBLISH chat.events:{channel_id} message.deleted
@@ -66,7 +69,13 @@ sequenceDiagram
 3. Archived or team deleted: `409 channel_archived`. Already deleted: `204` and no event.
 4. One transaction: the next `seq`, then `UPDATE … WHERE deleted_at IS NULL` clears the body and mentions
    and sets `deleted_at`. If another delete got there first, nothing is updated, the transaction rolls
-   back (no `seq` used) and the answer is still `204`. Then the `message.deleted` event row.
+   back (no `seq` used) and the answer is still `204`. Then, in the same transaction:
+   - `body` and `mentions` are cleared in the message's earlier `message.created` (the one with the
+     message's own `seq`) and `message.edited` events, so `GET …/events` and `POST /sync` can't show the
+     deleted text (CHAT-270). The rows keep their `seq` and type.
+   - The message's reactions are deleted, without `reaction.removed` events: `message.deleted` tells the
+     web app to drop them (CHAT-203).
+   - The `message.deleted` event row.
 5. After the commit `message.deleted` is published; `204`.
 
 **Why the conditional `UPDATE`?** It locks the row and checks "not deleted yet" in one statement, so an
@@ -94,13 +103,18 @@ after it.
 - **A team admin who isn't in a private channel can't delete there.** They can't read the channel, so they
   get `404`, although D-05 lets admins delete any message. To confirm with the PO.
 - **Files aren't detached on delete yet** ([CHAT-212](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-212)),
-  and there are no pins to remove yet ([CHAT-127](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-127)).
+  and there are no pins to remove yet ([CHAT-204](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-204)).
+- **Deleted text that was already sent stays sent.** Clearing the earlier events only covers what is
+  stored; a tab that got `message.created` over the WebSocket before the delete still has the text until
+  it applies `message.deleted`.
 
 ## Key code
 
 | File | What is there |
 |---|---|
-| `chatty-chat/app/services/message_service.py` | `MessageService.edit`, `delete`, `_get_readable_message` |
+| `chatty-chat/app/services/message_service.py` | `MessageService.edit`, `delete`, `get_readable_message` |
 | `chatty-chat/app/services/access_service.py` | `get_channel_for_delete`, `_can_delete_others` (D-05) |
 | `chatty-chat/app/repositories/messages.py` | `update_message_body`, `soft_delete_message`: the conditional updates |
-| `chatty-chat/tests/integration/test_delete_message_real.py` | Two deletes at once write one event |
+| `chatty-chat/app/repositories/channel_events.py` | `clear_message_text`: empties the deleted text in earlier events |
+| `chatty-chat/app/repositories/reactions.py` | `delete_message_reactions` |
+| `chatty-chat/tests/integration/test_delete_message_real.py` | Two deletes at once write one event; a delete clears the text in earlier events |
