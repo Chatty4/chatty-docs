@@ -43,7 +43,7 @@ sequenceDiagram
 ## Step by step
 
 1. **Connect.** `GET /api/chat/v1/ws?token=<access token>`: browsers can't set headers on a WebSocket, so
-   the token is in the URL. uvicorn's log line hides it (`token=***`).
+   the token is in the URL. uvicorn's log lines, the error and the access log, hide it (`token=***`).
 2. **Accept, then check.** chatty-chat accepts first, so every rejection reaches the browser with our close
    code instead of `1006`. The token must be valid; the user must exist and be active.
 3. **Subscribe.** The gateway adds the socket to every channel in the user's memberships. See
@@ -76,6 +76,9 @@ sequenceDiagram
 - **No typing or presence yet.** The contract has them; the heartbeat's `visible` is stored but not used
   ([CHAT-215](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-215)).
 - **`4008 too_many_messages` isn't sent yet**: there is no rate limit on client messages.
+- **A channel removal during the connect can be missed.** It arrives after the memberships are loaded but
+  before the socket joins its channels, so the socket gets that channel's events until it reconnects
+  (at most 15 minutes) ([CHAT-271](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-271)).
 - **The web client isn't built yet** ([CHAT-126](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-126)).
 
 ## Key code
