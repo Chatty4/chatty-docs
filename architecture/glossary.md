@@ -24,9 +24,10 @@ Plain meanings for the hard words.
 | Cursor pagination | Lists come in pages; the response has `next_cursor` to ask for the next page |
 | Contract | The exact request and response of an endpoint or event, in chatty-infra/docs |
 | `core.events` | The Redis channel chatty-core publishes membership, role, channel, team and deactivation changes on; chatty-chat listens, clears its cache and updates open WebSockets |
-| `seq` | A channel's own counter. Every message, edit and delete takes the next number, so `seq` gives the order of everything in a channel and shows gaps |
+| `seq` | A channel's own counter. Every message, edit, delete and reaction change takes the next number, so `seq` gives the order of everything in a channel and shows gaps |
 | `client_msg_id` | A UUID the web app makes for each message. Sending it again returns the first message instead of a second one |
-| Channel event | One change in a channel (`message.created`, `message.edited`, `message.deleted`) with its `seq`. Stored in `channel_events` and sent live |
+| Channel event | One change in a channel (`message.created`, `message.edited`, `message.deleted`, `reaction.added`, `reaction.removed`) with its `seq`. Stored in `channel_events` and sent live |
+| Reaction | An emoji a user puts on a message. One user can add several emoji to a message, each once; the message shows a `count` per emoji and `me` when I am one of them |
 | Pub/sub | Redis channels that pass a message to whoever listens at that moment. Nothing is stored |
 | Gateway | The part of each chatty-chat process that holds its WebSockets: one Redis subscription, forwarding events to the local sockets |
 | Heartbeat | The message the web app sends every 20 s on the WebSocket. None for 60 s closes the socket |
