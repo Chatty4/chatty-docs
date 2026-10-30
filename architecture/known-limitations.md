@@ -18,7 +18,7 @@ What is not right yet, grouped by theme.
 
 ## Chat
 
-- **`/sync` has no rate limit.** Each unknown channel ID in a request is one chatty-core lookup (404s aren't cached), so one request can cause up to 500 core calls. They run at the same time since [CHAT-268](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-268), so the request is fast, but core still does the work.
+- **`/sync` has no rate limit.** Each unknown channel ID in a request is one chatty-core lookup (404s aren't cached), so one request can cause up to 500 core calls. They run in parallel ([CHAT-268](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-268)), at most 20 at once ([CHAT-270](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-270)), so core never gets more than 20 at a time from one request, but it still does all the work.
 
 ## Messages and live events
 
@@ -27,8 +27,10 @@ What is not right yet, grouped by theme.
 - **One stuck socket delays its gateway's events.** The gateway sends to a channel's sockets together; a socket that stops reading holds up the next event for everyone on that process for up to 5 s, once, before it is dropped and closed with `1001 too_slow`. A queue per socket is the fix if the load test shows it ([CHAT-224](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-224)).
 - **Sync makes up to two queries per channel**, for up to 500 channels in one call ([CHAT-224](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-224)).
 - **No rate limits in chatty-chat.** Neither sending nor WebSocket messages are limited; `4008 too_many_messages` is in the contract but not sent.
+- **A socket can miss a channel removal that happens while it connects.** If the user is removed from a channel between loading their memberships and joining the channels, the socket still gets that channel's new events until it reconnects or its access token expires (up to 15 minutes) ([CHAT-271](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-271)).
+- **Deleted text that was already sent stays with whoever got it.** A delete clears the text in the stored events, so sync and the events endpoint can't show it, but a tab that got `message.created` live keeps the text until it applies `message.deleted`.
 - **A team admin can't delete messages in a private channel they aren't in.** They can't read the channel, so they get `404`, although D-05 lets team admins delete any message. To confirm with the PO.
-- **Not built yet:** files on messages ([CHAT-212](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-212)), reactions and pins ([CHAT-127](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-127)), the read endpoint and unread counts ([CHAT-128](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-128)), typing and presence ([CHAT-215](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-215)).
+- **Not built yet:** files on messages ([CHAT-212](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-212)), pins ([CHAT-204](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-204)), the read endpoint and unread counts ([CHAT-128](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-128)), typing and presence ([CHAT-215](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-215)).
 
 ## Infra
 
