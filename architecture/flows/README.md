@@ -14,12 +14,13 @@ A flow follows one user journey across services. Each page has a picture first, 
 | [Connect the WebSocket](websocket.md) | How does a tab stay connected, and what does each close code mean? | web, chat, core |
 | [Send a message](send-message.md) | How does a message get its `seq`, and why does a retry not send it twice? | web, chat, core, Redis |
 | [Edit and delete a message](edit-and-delete-message.md) | Who can change a message, and what stays when it is deleted? | web, chat, core, Redis |
+| [React to a message](react-to-a-message.md) | How do reaction counts stay right when the same emoji is added twice? | web, chat, core, Redis |
 | [Open a channel, reconnect and sync](reconnect-and-sync.md) | How does a tab catch up after a gap or a lost connection? | web, chat |
 | [A change in chatty-core reaches chatty-chat](core-events.md) | How do removed users lose access at once, in the cache and on open sockets? | core, Redis, chat |
 
 How the live parts fit together (sockets, Redis pub/sub, gateways, the cache): [live events](../realtime.md).
 
-Planned, once the features exist: file upload, reactions and pins.
+Planned, once the features exist: file upload and pins.
 
 ## How to read a flow page
 

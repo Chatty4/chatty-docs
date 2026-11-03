@@ -17,8 +17,9 @@ The private key never leaves chatty-core. chatty-chat receives only the public h
 
 **On the WebSocket** the token goes in the URL, `GET /api/chat/v1/ws?token=<access token>`, because
 browsers can't set headers on a WebSocket. chatty-chat checks it once at connect (bad or expired: close
-`4001`) and closes the socket with `4001` when its `exp` is reached. uvicorn logs every WebSocket URL, so
-chatty-chat's `RedactTokens` log filter replaces `token=…` with `token=***` before the line is written
+`4001`) and closes the socket with `4001` when its `exp` is reached. uvicorn logs URLs with the token in
+its error log (every WebSocket) and in its access log (any request that has `?token=`), so chatty-chat's
+`RedactTokens` log filter, on both loggers, replaces `token=…` with `token=***` before the line is written
 (`chatty-chat/app/core/logging.py`).
 
 ## Refresh token rotation

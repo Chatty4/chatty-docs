@@ -66,7 +66,8 @@ chatty-chat uses two Redis clients (`app/main.py`):
 - `app.state.redis`: cache reads and writes, and `EventBus.publish`. 2 s socket timeouts.
 - `events_redis`: the listeners. Retries are off, so a dropped connection surfaces at once and the code's
   own reconnect loops take over. Each `pubsub()` opens its own connection: a connection in subscribe mode
-  can't run `GET` or `PUBLISH`.
+  can't run `GET` or `PUBLISH`. `pubsub.listen()` waits with no timeout, but redis-py 8.1 turns on TCP
+  keepalive by default, so a connection that dies silently fails after about 45 s and the loops reconnect.
 
 ## Start-up
 
@@ -78,7 +79,8 @@ The app's lifespan creates the registry and the gateway and starts two backgroun
 | `listen_core_events()` | `core.events` | Keep the cache right |
 
 Both tasks get every `core.events` message, because pub/sub gives each subscriber its own copy. A crash
-in either task is logged (`log_crash`). On shutdown both are cancelled, and uvicorn closes the open sockets
+in either task is logged (`log_crash`), and `/health` then answers `503` with `"tasks": "error"`, because
+that process no longer keeps its sockets or its cache right (CHAT-269). On shutdown both are cancelled, and uvicorn closes the open sockets
 with `1012`.
 
 ## Connecting a socket
@@ -172,7 +174,8 @@ sequenceDiagram
 2. Every process with a socket in the channel is subscribed to `chat.events:{channel_id}` and gets the
    event. The gateway looks up the channel's local sockets and sends them all at once.
 3. A socket that doesn't take the frame within 5 s is removed from its channels and closed with
-   `1001 too_slow` in the background, so its browser reconnects and syncs.
+   `1001 too_slow` in the background, so its browser reconnects and syncs. The socket's own handler then
+   sees it is already closed and doesn't close it a second time.
 4. The sender's own tab gets the message twice, in the REST answer and as an event. The web app keeps one,
    by `id`.
 

@@ -23,9 +23,10 @@ without foreign keys (D-01).
 
 | Table | One row is | Worth knowing |
 |---|---|---|
-| `channel_counters` | A channel's seq counter | `last_seq` is the last number handed out. Every send, edit and delete takes the next one with `INSERT … ON CONFLICT DO UPDATE SET last_seq = last_seq + 1`, which locks the row until the commit and creates it for a channel's first message. So `seq` is per channel, not global, without gaps or duplicates |
+| `channel_counters` | A channel's seq counter | `last_seq` is the last number handed out. Every send, edit, delete and reaction change takes the next one with `INSERT … ON CONFLICT DO UPDATE SET last_seq = last_seq + 1`, which locks the row until the commit and creates it for a channel's first message. So `seq` is per channel, not global, without gaps or duplicates |
 | `messages` | A message | `seq` is unique per channel; history pages by it. `(author_id, client_msg_id)` is unique, so a retried send returns the original. Deleting sets `deleted_at`, clears `body` and `mentions`, and keeps `id` and `seq` |
-| `channel_events` | A change in a channel | One row per `message.created`, `message.edited`, `message.deleted`, with the same `seq` as the change. Read by `GET /channels/{id}/events` and `POST /sync`. Meant to be kept 30 days and to be the outbox for Kafka (`published_at` null until sent); neither the cleanup nor the relay runs yet |
+| `channel_events` | A change in a channel | One row per `message.created`, `message.edited`, `message.deleted`, `reaction.added`, `reaction.removed`, with the same `seq` as the change. Read by `GET /channels/{id}/events` and `POST /sync`. Rows are never changed, with one exception: deleting a message clears `body` and `mentions` in its earlier `message.created` and `message.edited` rows, so the deleted text can't be read back (CHAT-270). Meant to be kept 30 days and to be the outbox for Kafka (`published_at` null until sent); neither the cleanup nor the relay runs yet |
+| `reactions` | One user's emoji on one message | Primary key `(message_id, user_id, emoji)`: a user can react with several emoji, each once. `emoji` is `text` (one emoji can be several code points, up to 32 bytes). Deleting a message deletes its reactions in the same transaction, without `reaction.removed` events. Foreign key to `messages` (on delete cascade) |
 | `attachments` | A file on a message | What chatty-core's `attach` returned (D-03). Removed with its message (on delete cascade). Nothing writes it yet (CHAT-212) |
 | `read_state` | How far a user read a channel | `last_read_seq`, only ever moved forward. Today only sending moves it, for the sender; the read endpoint and unread counts are **planned** (CHAT-128) |
 
@@ -64,7 +65,7 @@ can't put the old answer back after the event deleted it (CHAT-266).
 | Pub/sub channel | Carries | Stored |
 |---|---|---|
 | `core.events` | chatty-core's 5 events (`membership.changed`, `team.member.changed`, `channel.updated`, `team.deleted`, `user.deactivated`), published after each change commits ([core-events.md](https://github.com/Chatty4/chatty-infra/blob/dev/docs/core-events.md), D-06, D-08) | No: a subscriber that isn't connected misses the event |
-| `chat.events:{channel_id}` | chatty-chat's channel events (`message.created`, `message.edited`, `message.deleted`), published after the commit. Only gateways with a socket in the channel subscribe ([events.md](https://github.com/Chatty4/chatty-infra/blob/dev/docs/events.md)) | No, but every event is also in `channel_events`, so `POST /sync` recovers a missed one |
+| `chat.events:{channel_id}` | chatty-chat's channel events (`message.created`, `message.edited`, `message.deleted`, `reaction.added`, `reaction.removed`), published after the commit. Only gateways with a socket in the channel subscribe ([events.md](https://github.com/Chatty4/chatty-infra/blob/dev/docs/events.md)) | No, but every event is also in `channel_events`, so `POST /sync` recovers a missed one |
 
 chatty-chat listens to `core.events` twice: the cache listener marks the keys an event makes stale (bump
 the version, then delete the key), and the gateway updates open sockets. Every time the cache listener
