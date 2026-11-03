@@ -28,6 +28,7 @@ What is not right yet, grouped by theme.
 - **Sync makes up to two queries per channel**, for up to 500 channels in one call ([CHAT-224](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-224)).
 - **No rate limits in chatty-chat.** Neither sending nor WebSocket messages are limited; `4008 too_many_messages` is in the contract but not sent.
 - **A team admin can't delete messages in a private channel they aren't in.** They can't read the channel, so they get `404`, although D-05 lets team admins delete any message. To confirm with the PO.
+- **Deleting an edited message blocks writes in its channel for a moment.** Clearing its text from `message.edited` events scans later events under the channel lock ([CHAT-272](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-272)). An index is the fix if [CHAT-224](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-224) shows it's needed.
 - **Not built yet:** files on messages ([CHAT-212](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-212)), reactions and pins ([CHAT-127](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-127)), the read endpoint and unread counts ([CHAT-128](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-128)), typing and presence ([CHAT-215](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-215)).
 
 ## Infra
