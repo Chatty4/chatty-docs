@@ -31,7 +31,7 @@ What is not right yet, grouped by theme.
 - **Deleted text that was already sent stays with whoever got it.** A delete clears the text in the stored events, so sync and the events endpoint can't show it, but a tab that got `message.created` live keeps the text until it applies `message.deleted`.
 - **A team admin can't delete messages in a private channel they aren't in.** They can't read the channel, so they get `404`, although D-05 lets team admins delete any message. To confirm with the PO.
 - **Deleting an edited message blocks writes in its channel for a moment.** Clearing its text from `message.edited` events scans later events under the channel lock ([CHAT-272](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-272)). An index is the fix if [CHAT-224](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-224) shows it's needed.
-- **Not built yet:** files on messages ([CHAT-212](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-212)), pins ([CHAT-204](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-204)), the read endpoint and unread counts ([CHAT-128](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-128)), typing and presence ([CHAT-215](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-215)).
+- **Not built yet:** files on messages ([CHAT-212](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-212)), the read endpoint and unread counts ([CHAT-128](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-128)), typing and presence ([CHAT-215](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-215)).
 
 
 ## Infra

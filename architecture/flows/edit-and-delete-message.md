@@ -75,6 +75,8 @@ sequenceDiagram
      deleted text (CHAT-270). The rows keep their `seq` and type.
    - The message's reactions are deleted, without `reaction.removed` events: `message.deleted` tells the
      web app to drop them (CHAT-203).
+   - Its pin, if any, is deleted, without a `pin.removed` event: `message.deleted` tells the web app to
+     drop it from the pin list (CHAT-204).
    - The `message.deleted` event row.
 5. After the commit `message.deleted` is published; `204`.
 
@@ -102,8 +104,7 @@ after it.
 
 - **A team admin who isn't in a private channel can't delete there.** They can't read the channel, so they
   get `404`, although D-05 lets admins delete any message. To confirm with the PO.
-- **Files aren't detached on delete yet** ([CHAT-212](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-212)),
-  and there are no pins to remove yet ([CHAT-204](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-204)).
+- **Files aren't detached on delete yet** ([CHAT-212](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-212)).
 - **Deleted text that was already sent stays sent.** Clearing the earlier events only covers what is
   stored; a tab that got `message.created` over the WebSocket before the delete still has the text until
   it applies `message.deleted`.
@@ -117,4 +118,5 @@ after it.
 | `chatty-chat/app/repositories/messages.py` | `update_message_body`, `soft_delete_message`: the conditional updates |
 | `chatty-chat/app/repositories/channel_events.py` | `clear_message_text`: empties the deleted text in earlier events |
 | `chatty-chat/app/repositories/reactions.py` | `delete_message_reactions` |
+| `chatty-chat/app/repositories/pins.py` | `delete_message_pin` |
 | `chatty-chat/tests/integration/test_delete_message_real.py` | Two deletes at once write one event; a delete clears the text in earlier events |
