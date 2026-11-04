@@ -64,6 +64,7 @@ The socket is accepted first and closed after, so the browser sees our close cod
 | WebSocket gateway | One Redis pub/sub connection per process, one subscription per channel with a local socket. Forwards channel events, follows membership changes, closes deactivated users, heartbeat and watch | [connect the WebSocket](../../architecture/flows/websocket.md), [live events](../../architecture/realtime.md) |
 | Event bus | `EventBus.publish(ChannelEvent)`: one `PUBLISH` on `chat.events:{channel_id}` per event, after the commit. Kafka replaces it later | [live events](../../architecture/realtime.md#from-a-saved-change-to-every-tab) |
 | chatty-core cache | `members:{user_id}` and `channel:{channel_id}` for 5 minutes. A write is refused if an event bumped the key's version meanwhile (CHAT-266) | [live events](../../architecture/realtime.md#the-cache-and-its-versions) |
+| Cleanup | `python -m app.jobs.clean_up_events` deletes `channel_events` older than 30 days, each channel's oldest first. Runs once a day from the `chat` container (CHAT-191). Clients that asked for deleted events get `gap_too_large` and reload the history | [reconnect and sync](../../architecture/flows/reconnect-and-sync.md) |
 | `core.events` | Marks the cache keys an event makes stale; the gateway updates open sockets. On every (re)subscribe the whole cache is cleared (D-08) | [core events](../../architecture/flows/core-events.md) |
 
 ## If something is down
@@ -81,7 +82,7 @@ Each health check gives up after 2 seconds. Code: `app/services/health_service.p
 
 - No read state endpoint, unread counts or files yet ([CHAT-128](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-128), [CHAT-212](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-212)).
 - No typing or presence on the WebSocket yet ([CHAT-215](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-215)).
-- Events go over Redis pub/sub only: the outbox relay to Kafka and the 30-day cleanup of `channel_events` don't run yet.
+- Events go over Redis pub/sub only: the outbox relay to Kafka doesn't run yet.
 - Watch uses the memberships loaded at connect ([CHAT-231](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-231)).
 
 Full list: [known limitations](../../architecture/known-limitations.md#messages-and-live-events).

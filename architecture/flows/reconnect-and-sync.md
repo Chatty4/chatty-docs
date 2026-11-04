@@ -60,7 +60,7 @@ sequenceDiagram
 1. Same read check as history.
 2. Up to `limit` events (1 to 500, default 500) with `seq > after_seq`, oldest first, plus `last_seq` and
    `has_more`. With `has_more`, call again with the last `seq` as `after_seq`.
-3. If the first event after `after_seq` is gone (cleaned up), `409 gap_too_large`.
+3. If the first event after `after_seq` is gone (deleted by the nightly 30-day cleanup), `409 gap_too_large`.
 
 **Reconnect** (`POST /sync`)
 
@@ -87,8 +87,6 @@ sequenceDiagram
 
 ## ⚠️ Known gaps
 
-- **Events are never cleaned up yet.** `channel_events` is meant to keep 30 days; until the cleanup runs,
-  `gap_too_large` only happens when more than 500 events are missing.
 - **Sync makes up to two queries per channel** (500 channels max). Batching is the fix if the load test
   shows it ([CHAT-224](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-224)).
 - **No unread counts or `POST /channels/{id}/read` yet.** Only sending moves the sender's read position
