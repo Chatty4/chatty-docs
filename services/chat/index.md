@@ -7,10 +7,10 @@ FastAPI: messages, reactions, pins, presence, the WebSocket gateway, sync. Later
 | | |
 |---|---|
 | Stack | Python 3.14, FastAPI, SQLAlchemy 2.1 (async, asyncpg), Alembic, `redis.asyncio`, uvicorn |
-| Public API | `/api/chat/v1`, contract in [api-chat.md](https://github.com/Chatty4/chatty-infra/blob/dev/docs/api-chat.md): messages, reactions, pins, history, sync, channel events, presence, the WebSocket `GET /api/chat/v1/ws` |
+| Public API | `/api/chat/v1`, contract in [api-chat.md](https://github.com/Chatty4/chatty-infra/blob/dev/docs/api-chat.md): messages, reactions, pins, history, sync, channel events, presence, read state and unread counts, the WebSocket `GET /api/chat/v1/ws` |
 | Events | Channel events in [events.md](https://github.com/Chatty4/chatty-infra/blob/dev/docs/events.md); chatty-core's events in [core-events.md](https://github.com/Chatty4/chatty-infra/blob/dev/docs/core-events.md) |
 | Health | `GET /health`: the database, Redis and the two background tasks |
-| Stores | Postgres `chat_db` (messages, reactions, pins, channel events, seq counters, read state), Redis (cache, presence, `core.events`, `chat.events:*`, `chat.presence:*`). See the [data map](../../architecture/data-map.md) |
+| Stores | Postgres `chat_db` (messages, reactions, pins, channel events, seq counters, read state), Redis (cache, presence, `core.events`, `chat.events:*`, `chat.presence:*`, `chat.users:*`). See the [data map](../../architecture/data-map.md) |
 | Local address | <http://127.0.0.1:8001> |
 
 How the live parts work together: [live events](../../architecture/realtime.md).
@@ -19,9 +19,9 @@ How the live parts work together: [live events](../../architecture/realtime.md).
 
 | Caller | Calls | Status |
 |---|---|---|
-| chatty-web (the browser) | REST: send, edit, delete, reactions, pins, history, `POST /sync`, channel events, presence | works; the web client is **planned** ([CHAT-126](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-126)) |
+| chatty-web (the browser) | REST: send, edit, delete, reactions, pins, history, `POST /sync`, channel events, presence, `POST /channels/{id}/read`, `GET /unread` | works; the web client is **planned** ([CHAT-126](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-126)) |
 | chatty-web (the browser) | the WebSocket, `/api/chat/v1/ws?token=<JWT>` | works |
-| chatty-web (the browser) | REST: read state, attachments, search | **planned** ([CHAT-128](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-128), [CHAT-212](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-212)) |
+| chatty-web (the browser) | REST: attachments, search | **planned** ([CHAT-212](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-212)) |
 | chatty-core | `core.events` on Redis | works |
 
 And what it calls:
@@ -82,7 +82,7 @@ Each health check gives up after 2 seconds. Code: `app/services/health_service.p
 
 ## ⚠️ Known gaps
 
-- No read state endpoint, unread counts or files yet ([CHAT-128](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-128), [CHAT-212](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-212)).
+- No files yet ([CHAT-212](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-212)).
 - No typing on the WebSocket yet ([CHAT-216](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-216)).
 - A crash sends no `offline`, so open tabs can show a user as online for too long.
 - Events go over Redis pub/sub only: the outbox relay to Kafka doesn't run yet.

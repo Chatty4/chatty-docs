@@ -73,6 +73,8 @@ sequenceDiagram
    `gap_too_large: true` with no events. Otherwise the events after the cursor and `last_seq`.
 5. The web app applies each channel's events in order, then the held-back ones; duplicates are dropped by
    `seq`. A channel with `gap_too_large` is reloaded from history; one with an error is dropped.
+6. It also calls `GET /unread?team_id=…` for the team on screen. `unread` messages are live only, so
+   the ones sent while the socket was closed are lost, and the sidebar badges would stay stale (D-12).
 
 ## If a step fails
 
@@ -89,8 +91,6 @@ sequenceDiagram
 
 - **Sync makes up to two queries per channel** (500 channels max). Batching is the fix if the load test
   shows it ([CHAT-224](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-224)).
-- **No unread counts or `POST /channels/{id}/read` yet.** Only sending moves the sender's read position
-  ([CHAT-128](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-128)).
 
 ## Key code
 

@@ -19,7 +19,7 @@ cache without serving stale access.
 | Process | One running uvicorn with the FastAPI app. There can be several; each is a gateway for its own sockets | `app/main.py` |
 | Gateway | One per process. Owns one Redis pub/sub connection, receives events, sends them to local sockets | `app/services/gateway.py` |
 | ConnectionRegistry | In memory, per process: which sockets each user has, and which sockets are in each channel and team | `app/services/connection_registry.py` |
-| EventBus | The sending side: one `PUBLISH` on `chat.events:{channel_id}` per channel event | `app/services/event_bus.py` |
+| EventBus | The sending side: one `PUBLISH` on `chat.events:{channel_id}` per channel event, and on `chat.users:{user_id}` for a live message to one user | `app/services/event_bus.py` |
 | PresenceStore | Who is online, in Redis, shared by every process | `app/clients/presence.py` |
 | Redis cache | chatty-core's `/internal` answers, kept 5 minutes, with version counters | `app/clients/core.py` |
 | `core.events` listener | Deletes the cache keys a chatty-core event makes stale | `app/clients/core_events.py` |
@@ -60,7 +60,7 @@ Redis does three unrelated things for chatty-chat.
 | Job | How it works | Keys or channels |
 |---|---|---|
 | **Cache** | Plain keys with a TTL. A read that finds the key is a **hit**; a read that doesn't is a **miss**, and chatty-chat asks chatty-core and stores the answer | `members:{user_id}`, `channel:{channel_id}`, and the counters `version:members:{user_id}`, `version:channel:{channel_id}`, `version:all` |
-| **Pub/sub** | Named channels. A `PUBLISH` reaches every connection that is `SUBSCRIBE`d to that name **right now**. Nothing is stored: a subscriber that isn't listening misses the message | `chat.events:{channel_id}` (one per chat channel), `chat.presence:{team_id}` (one per team), `core.events` (chatty-core's) |
+| **Pub/sub** | Named channels. A `PUBLISH` reaches every connection that is `SUBSCRIBE`d to that name **right now**. Nothing is stored: a subscriber that isn't listening misses the message | `chat.events:{channel_id}` (one per chat channel), `chat.presence:{team_id}` (one per team), `chat.users:{user_id}` (one per user with an open socket), `core.events` (chatty-core's) |
 | **Presence** | One line per open socket, and a set of online users per team. It isn't a copy of anything: this is the only record. See [see who is online](flows/see-who-is-online.md) | `presence:{user_id}`, `online:{team_id}` |
 
 chatty-chat uses two Redis clients (`app/main.py`):
@@ -77,7 +77,7 @@ The app's lifespan creates the registry and the gateway and starts two backgroun
 
 | Task | Subscribes to | Job |
 |---|---|---|
-| `gateway.run()` | `core.events`, `chat.events:{channel_id}` for every channel a local socket is in, and `chat.presence:{team_id}` for every team a local socket is in | Keep open sockets right |
+| `gateway.run()` | `core.events`, `chat.events:{channel_id}` for every channel a local socket is in, `chat.presence:{team_id}` for every team a local socket is in, and `chat.users:{user_id}` for every user with a local socket | Keep open sockets right |
 | `listen_core_events()` | `core.events` | Keep the cache right |
 
 Both tasks get every `core.events` message, because pub/sub gives each subscriber its own copy. A crash
@@ -108,13 +108,13 @@ sequenceDiagram
         CC->>R: cache it, only if no event came in meanwhile
     end
     WS->>GW: connect(user, socket, channel_ids, team_ids)
-    GW->>R: SUBSCRIBE chat.events:{channel} and chat.presence:{team} without a local socket yet
+    GW->>R: SUBSCRIBE chat.users:{user}, chat.events:{channel} and chat.presence:{team} without a local socket yet
     GW->>R: Add the socket's line to presence:{user_id}, the first one sends online
     loop until a close
         B->>WS: heartbeat / watch / unwatch
     end
     WS->>GW: disconnect() (always, in finally)
-    GW->>R: UNSUBSCRIBE channels and teams that lost their last local socket
+    GW->>R: UNSUBSCRIBE the user, channels and teams that lost their last local socket
     GW->>R: Remove the socket's line, the last one sends offline
 ```
 
@@ -145,7 +145,7 @@ flowchart LR
 
 | Map | Answers | Used for |
 |---|---|---|
-| user → sockets | Which sockets does this user have? | `user.deactivated`, `membership.changed` |
+| user → sockets | Which sockets does this user have? | `user.deactivated`, `membership.changed`, `unread` |
 | channel → sockets | Who gets an event for this channel? | Every channel event |
 | socket → channels | Which channels is this socket in? | A quick `leave_all` on disconnect |
 | team → sockets | Who gets a presence frame for this team? | Every `presence` frame |
@@ -154,7 +154,8 @@ flowchart LR
 `join()` returns `True` when a channel or team gets its **first** local socket, and `leave()` /
 `leave_all()` report when one loses its **last**. That is the signal to `SUBSCRIBE` or `UNSUBSCRIBE` in
 Redis. So a process subscribes to each channel and team once, whether 1 or 500 of its sockets are in it,
-and only to the ones its own users need.
+and only to the ones its own users need. `add()` and `remove()` do the same for a user: the user's first
+local socket subscribes to `chat.users:{user_id}`, and the last one unsubscribes.
 
 ## From a saved change to every tab
 
@@ -192,6 +193,35 @@ sequenceDiagram
 call still succeeds. The event is in `channel_events` with its `seq`, so a client that sees a gap or
 reconnects gets it from [`POST /sync`](flows/reconnect-and-sync.md).
 
+## A read reaches the user's other tabs
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant L as Laptop tab
+    participant API as POST /channels/{id}/read (any process)
+    participant DB as chat_db
+    participant R as Redis
+    participant GA as Gateway A (has a socket of the user)
+    participant P as Phone
+
+    L->>API: {seq}
+    API->>DB: one transaction: lower seq to last_seq, move read_state forward, count unread
+    DB-->>API: COMMIT
+    API->>R: PUBLISH chat.users:{user} unread
+    R-->>GA: the message
+    GA->>P: {"type": "unread", "channel_id", "unread", "mentions"}
+    API-->>L: 200 {channel_id, last_read_seq, unread, mentions}
+```
+
+1. A read position is private, so it can't go on `chat.events:{channel_id}`, which every member hears.
+   Each user has their own channel instead, `chat.users:{user_id}` (D-12).
+2. The message is published **only after the commit**, like channel events.
+3. The tab that sent the request gets it too: a REST request can't tell which socket is its own. It
+   carries the same counts as the answer, so nothing changes.
+4. `unread` has no `seq` and isn't stored. If a socket misses it, the web app's `GET /unread` after the
+   reconnect brings the badges back in line.
+
 ## chatty-core's events on open sockets
 
 The gateway's own `core.events` subscription keeps sockets that are already open right:
@@ -206,7 +236,7 @@ The gateway's own `core.events` subscription keeps sockets that are already open
 | `team.member.changed` `left` or `removed` | Ends a watch on that team's channel, and the sockets leave the team (`UNSUBSCRIBE` if last), which gets `offline`. The channel memberships come as their own `membership.changed removed` |
 | `team.deleted` | Nothing: the team's channels reject writes, so no new events arrive |
 
-The gateway handles `core.events`, the `chat.events:*` and the `chat.presence:*` channels on **one** connection, one message at a
+The gateway handles `core.events`, the `chat.events:*`, `chat.presence:*` and `chat.users:*` channels on **one** connection, one message at a
 time, so a `membership.changed removed` that arrived first is applied before the next channel event is
 forwarded. Every process gets the same event and updates its own sockets.
 
@@ -316,8 +346,8 @@ refused. A script runs as one step in Redis, so nothing can come in between the 
   its public channels until they reconnect ([CHAT-231](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-231)).
 - **One stuck socket delays its gateway's events** by up to 5 s once, before it is dropped. A queue per
   socket is the fix if the load test shows it ([CHAT-224](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-224)).
-- **No typing or unread messages yet** on the socket ([CHAT-216](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-216),
-  [CHAT-208](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-208)). The heartbeat's `visible` is stored but not used yet.
+- **No typing yet** on the socket ([CHAT-216](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-216)).
+  The heartbeat's `visible` is stored but not used yet.
 - **Presence has a few gaps of its own:** a crash sends no `offline`, a page refresh can flicker, and a close
   and a connect at the same moment can end in the wrong order. See
   [see who is online](flows/see-who-is-online.md).
