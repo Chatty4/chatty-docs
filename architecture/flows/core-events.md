@@ -56,7 +56,8 @@ sequenceDiagram
    | `membership.changed` `added` / `removed` | The user's sockets join / leave the channel |
    | `channel.updated` | The channel's sockets get `{"type": "channel.updated", …}` |
    | `user.deactivated` | The user's sockets are closed with `4003` |
-   | `team.member.changed` `left` / `removed` | A watch on that team's channel ends |
+   | `team.member.changed` `joined` | The user's sockets join the team, which gets `online` |
+   | `team.member.changed` `left` / `removed` | A watch on that team's channel ends; the sockets leave the team, which gets `offline` |
    | `team.deleted` | Nothing |
 
 5. Unknown or malformed events are logged and ignored, so a new event type from chatty-core can't stop

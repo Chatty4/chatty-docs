@@ -63,9 +63,20 @@ A cache miss reads the key's counter and `version:all` before it asks chatty-cor
 only if neither changed meanwhile (a Lua script). So a request that read chatty-core just before a change
 can't put the old answer back after the event deleted it (CHAT-266).
 
+chatty-chat also keeps who is online here, because a process only knows its own sockets. These keys aren't
+a cache: nothing else holds this data.
+
+| Key | Holds | Expires |
+|---|---|---|
+| `presence:{user_id}` | Sorted set, one line per open socket: socket ID → time of its last heartbeat | 60 s after the last connect or heartbeat, so a crashed process leaves nothing behind |
+| `online:{team_id}` | Set of the team's online user IDs, read by `GET /teams/{team_id}/presence` | Never; users leave it when their last socket closes |
+
+More: [see who is online](flows/see-who-is-online.md).
+
 | Pub/sub channel | Carries | Stored |
 |---|---|---|
 | `core.events` | chatty-core's 5 events (`membership.changed`, `team.member.changed`, `channel.updated`, `team.deleted`, `user.deactivated`), published after each change commits ([core-events.md](https://github.com/Chatty4/chatty-infra/blob/dev/docs/core-events.md), D-06, D-08) | No: a subscriber that isn't connected misses the event |
+| `chat.presence:{team_id}` | `presence` frames (`online`, `offline`). Only gateways with a socket in the team subscribe | No: a tab that opens later asks `GET /teams/{team_id}/presence` |
 | `chat.events:{channel_id}` | chatty-chat's channel events (`message.created`, `message.edited`, `message.deleted`, `reaction.added`, `reaction.removed`, `pin.added`, `pin.removed`), published after the commit. Only gateways with a socket in the channel subscribe ([events.md](https://github.com/Chatty4/chatty-infra/blob/dev/docs/events.md)) | No, but every event is also in `channel_events`, so `POST /sync` recovers a missed one |
 
 chatty-chat listens to `core.events` twice: the cache listener marks the keys an event makes stale (bump
