@@ -46,10 +46,11 @@ sequenceDiagram
    the token is in the URL. uvicorn's log lines, the error and the access log, hide it (`token=***`).
 2. **Accept, then check.** chatty-chat accepts first, so every rejection reaches the browser with our close
    code instead of `1006`. The token must be valid; the user must exist and be active.
-3. **Subscribe.** The gateway adds the socket to every channel in the user's memberships. See
-   [live events](../realtime.md#connecting-a-socket).
+3. **Subscribe.** The gateway adds the socket to every channel and team in the user's memberships. See
+   [live events](../realtime.md#connecting-a-socket). The user's first socket also makes them
+   [online](see-who-is-online.md).
 4. **Heartbeat.** Every 20 s the web app sends `{"type": "heartbeat", "visible": …}`. Only a valid
-   heartbeat resets the 60 s timer.
+   heartbeat resets the 60 s timer, and it also refreshes the user's presence.
 5. **Watch.** `{"type": "watch", "channel_id": …}` follows one public channel of the user's teams that they
    haven't joined; a new watch replaces the old one, `unwatch` ends it. Not public in my teams:
    `{"type": "error", "code": "cannot_watch"}`, and the socket stays open.
@@ -73,8 +74,8 @@ sequenceDiagram
 
 ## ⚠️ Known gaps
 
-- **No typing or presence yet.** The contract has them; the heartbeat's `visible` is stored but not used
-  ([CHAT-215](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-215)).
+- **No typing yet.** The contract has it ([CHAT-216](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-216)). The heartbeat's `visible` is
+  stored but not used.
 - **`4008 too_many_messages` isn't sent yet**: there is no rate limit on client messages.
 - **A channel removal during the connect can be missed.** It arrives after the memberships are loaded but
   before the socket joins its channels, so the socket gets that channel's events until it reconnects
@@ -87,6 +88,6 @@ sequenceDiagram
 |---|---|
 | `chatty-chat/app/api/routers/ws.py` | `websocket_endpoint`, `handle_message`, the deadlines |
 | `chatty-chat/app/schemas/ws.py` | `Heartbeat`, `Watch`, `Unwatch`, `ClientMessage` |
-| `chatty-chat/app/services/gateway.py` | `connect`, `disconnect`, `watch`, `unwatch` |
+| `chatty-chat/app/services/gateway.py` | `connect`, `disconnect`, `heartbeat`, `watch`, `unwatch` |
 | `chatty-chat/app/core/codes.py` | `CloseCode` |
 | `chatty-chat/tests/api/test_ws.py` | Close codes, heartbeats and watch |
