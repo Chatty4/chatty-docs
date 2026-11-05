@@ -8,7 +8,7 @@ The big picture: every service, how they talk, and auth in 30 seconds.
 |---|---|---|---|
 | chatty-web | The app in the browser | React (Vite) | routes and placeholder pages; no screens built yet |
 | chatty-core | Users, auth, teams, invites, channels, DMs, files | Django | works, except files |
-| chatty-chat | Messages, the live WebSocket, sync, reactions, pins, search | FastAPI | messages, reactions, pins, history, sync and the WebSocket gateway work; files and search not yet |
+| chatty-chat | Messages, the live WebSocket, sync, reactions, pins, presence, search | FastAPI | messages, reactions, pins, presence, history, sync and the WebSocket gateway work; files and search not yet |
 | chatty-infra | Docker Compose, contracts, setup scripts | | works |
 
 Each backend service has its own Postgres database. They never read each other's database; they talk
