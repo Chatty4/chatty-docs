@@ -32,6 +32,7 @@ Plain meanings for the hard words.
 | Pub/sub | Redis channels that pass a message to whoever listens at that moment. Nothing is stored |
 | Gateway | The part of each chatty-chat process that holds its WebSockets: one Redis subscription, forwarding events to the local sockets |
 | Heartbeat | The message the web app sends every 20 s on the WebSocket. None for 60 s closes the socket |
+| Presence | Whether a user is online: at least one open WebSocket. Shown per team, and sent as `online` or `offline` only when it changes |
 | Watch | Following one public channel on the WebSocket without joining it |
 | Sync | Getting the events missed while offline: `POST /sync` with the last `seq` of each channel |
 | Cache hit / miss | Hit: the answer is in Redis. Miss: it isn't, so chatty-chat asks chatty-core and stores it |
