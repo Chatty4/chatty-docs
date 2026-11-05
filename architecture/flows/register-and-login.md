@@ -31,7 +31,7 @@ sequenceDiagram
     C->>R: DEL login_fail:{email}, DECR login_fail:{ip}
     C->>DB: INSERT authn_refresh_tokens row
     C-->>W: 200 {access_token, refresh_token, ...}
-    W->>W: access token in memory, refresh token in localStorage
+    W->>W: both tokens in localStorage
 ```
 
 ## Step by step

@@ -6,7 +6,7 @@ The big picture: every service, how they talk, and auth in 30 seconds.
 
 | Service | What it owns | Stack | Status |
 |---|---|---|---|
-| chatty-web | The app in the browser | React (Vite) | routes and placeholder pages; no screens built yet |
+| chatty-web | The app in the browser | React (Vite) | login, teams, channels, DMs, invites, messages, reactions and pins work; unread, typing, presence and files not yet |
 | chatty-core | Users, auth, teams, invites, channels, DMs, files | Django | works, except files |
 | chatty-chat | Messages, the live WebSocket, sync, reactions, pins, presence, search | FastAPI | messages, reactions, pins, presence, history, sync and the WebSocket gateway work; files and search not yet |
 | chatty-infra | Docker Compose, contracts, setup scripts | | works |
@@ -38,13 +38,13 @@ Solid lines work today; dashed lines are planned.
 | From → to | How | What for | Status |
 |---|---|---|---|
 | web → core | HTTPS JSON, `/api/core/v1` | Accounts, teams, channels | works |
-| web → chat | HTTPS JSON and a WebSocket, `/api/chat/v1` | Messages, history, sync, live events | works; the web client is **planned** ([CHAT-126](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-126)) |
+| web → chat | HTTPS JSON and a WebSocket, `/api/chat/v1` | Messages, history, sync, live events | works |
 | chat → core | HTTP, `/internal`, `X-Service-Token` | Who is in which channel (D-07), file attach (D-03) | memberships and channel work; file attach **planned** ([CHAT-212](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-212)) |
 | core → chat | Redis pub/sub `core.events` | "Something changed": clear the cache, update open WebSockets (D-06, D-08) | works ([core events](flows/core-events.md)) |
 | chat → chat | Redis pub/sub `chat.events:{channel_id}` | A saved change reaches the gateways with sockets in the channel | works ([live events](realtime.md)); Kafka **planned** |
 
-In production every browser request goes through chatty-web's Nginx (D-09). Locally the services are
-reached directly on `127.0.0.1`.
+In production every browser request goes through chatty-web's Nginx (D-09). Locally the Vite dev server
+forwards the same paths to the services on `127.0.0.1`, so the browser only talks to its own origin.
 
 ## Auth in 30 seconds
 

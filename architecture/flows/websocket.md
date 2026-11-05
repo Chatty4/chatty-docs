@@ -80,7 +80,7 @@ sequenceDiagram
 - **A channel removal during the connect can be missed.** It arrives after the memberships are loaded but
   before the socket joins its channels, so the socket gets that channel's events until it reconnects
   (at most 15 minutes) ([CHAT-271](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-271)).
-- **The web client isn't built yet** ([CHAT-126](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-126)).
+- **The web app never sends `watch`**, and doesn't handle `presence`, `typing` or `unread` frames yet.
 
 ## Key code
 

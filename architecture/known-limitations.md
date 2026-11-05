@@ -39,6 +39,19 @@ What is not right yet, grouped by theme.
 - **Not built yet:** files on messages ([CHAT-212](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-212)), typing ([CHAT-216](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-216)).
 
 
+## Web
+
+- **Tokens are in `localStorage`.** The tabs need to share them, but any script running on the page can read them, and the Nginx config sets no `script-src` Content Security Policy.
+- **No unread badges, typing or presence dots.** The WebSocket types exist, but nothing handles those frames, and `GET /teams/{team_id}/presence` isn't called ([CHAT-209](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-209), [CHAT-217](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-217), [CHAT-197](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-197)).
+- **Each token renewal closes the socket before opening the next.** Together with the presence flicker above, a user with one tab can show as offline and online about every 14 minutes once dots are built.
+- **The sidebar doesn't follow new channels and DMs.** Being added to one shows only after the team changes or the page reloads.
+- **Events of channels that aren't open are ignored.** They load from history when opened, and nothing tells the user there is something new.
+- **The web app never sends `watch`.**
+- **The Attach file button does nothing yet** ([CHAT-214](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-214)).
+- **The connection status isn't shown.** A dropped socket looks like a quiet channel.
+- **Drafts and failed messages are in memory**, so a reload loses them.
+- **CI doesn't run the tests.** `.github/workflows/ci.yml` runs lint, typecheck and build but not `npm test`, and uses Node 22 while the README and the Docker image use Node 24.
+
 ## Infra
 
 - **No HTTPS in the dev stack.** All traffic between the browser, Nginx, and the service containers is plain HTTP. TLS termination is expected to happen outside this stack in any non-dev environment, but where is not decided yet. Until then chatty-core sends no HSTS header, sets no `SECURE_SSL_REDIRECT` / `SECURE_PROXY_SSL_HEADER`, and CI doesn't run `manage.py check --deploy`.

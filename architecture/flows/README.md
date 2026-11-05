@@ -6,6 +6,7 @@ A flow follows one user journey across services. Each page has a picture first, 
 
 | Flow | Question it answers | Services |
 |---|---|---|
+| [From login to logout](from-login-to-logout.md) | What happens from opening the app to sending a message and logging out? | web, core, chat, Redis |
 | [Register and login](register-and-login.md) | How does a new user get an account and their first tokens? | web, core, Redis |
 | [Refresh and logout](refresh-and-logout.md) | How does a user stay logged in? How does one device log out? | web, core |
 | [Change password](change-password.md) | Why does this device stay logged in while the others are logged out? | web, core |
