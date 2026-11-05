@@ -18,8 +18,9 @@ cache without serving stale access.
 | WebSocket | One long-lived connection per browser tab, so the server can send at any time | `app/api/routers/ws.py` |
 | Process | One running uvicorn with the FastAPI app. There can be several; each is a gateway for its own sockets | `app/main.py` |
 | Gateway | One per process. Owns one Redis pub/sub connection, receives events, sends them to local sockets | `app/services/gateway.py` |
-| ConnectionRegistry | In memory, per process: which sockets each user has, and which sockets are in each channel | `app/services/connection_registry.py` |
+| ConnectionRegistry | In memory, per process: which sockets each user has, and which sockets are in each channel and team | `app/services/connection_registry.py` |
 | EventBus | The sending side: one `PUBLISH` on `chat.events:{channel_id}` per channel event | `app/services/event_bus.py` |
+| PresenceStore | Who is online, in Redis, shared by every process | `app/clients/presence.py` |
 | Redis cache | chatty-core's `/internal` answers, kept 5 minutes, with version counters | `app/clients/core.py` |
 | `core.events` listener | Deletes the cache keys a chatty-core event makes stale | `app/clients/core_events.py` |
 | `channel_events` table | Every channel event with its `seq`, the source of truth for catching up | `app/models/channel_event.py` |
@@ -52,14 +53,15 @@ The process that saves a message is usually not the one holding the receivers' s
 pub/sub connects them: every process publishes to Redis and listens to Redis, so it doesn't matter which
 process a browser is connected to.
 
-## Redis: two jobs
+## Redis: three jobs
 
-Redis does two unrelated things for chatty-chat.
+Redis does three unrelated things for chatty-chat.
 
 | Job | How it works | Keys or channels |
 |---|---|---|
 | **Cache** | Plain keys with a TTL. A read that finds the key is a **hit**; a read that doesn't is a **miss**, and chatty-chat asks chatty-core and stores the answer | `members:{user_id}`, `channel:{channel_id}`, and the counters `version:members:{user_id}`, `version:channel:{channel_id}`, `version:all` |
-| **Pub/sub** | Named channels. A `PUBLISH` reaches every connection that is `SUBSCRIBE`d to that name **right now**. Nothing is stored: a subscriber that isn't listening misses the message | `chat.events:{channel_id}` (one per chat channel), `core.events` (chatty-core's) |
+| **Pub/sub** | Named channels. A `PUBLISH` reaches every connection that is `SUBSCRIBE`d to that name **right now**. Nothing is stored: a subscriber that isn't listening misses the message | `chat.events:{channel_id}` (one per chat channel), `chat.presence:{team_id}` (one per team), `core.events` (chatty-core's) |
+| **Presence** | One line per open socket, and a set of online users per team. It isn't a copy of anything: this is the only record. See [see who is online](flows/see-who-is-online.md) | `presence:{user_id}`, `online:{team_id}` |
 
 chatty-chat uses two Redis clients (`app/main.py`):
 
@@ -75,7 +77,7 @@ The app's lifespan creates the registry and the gateway and starts two backgroun
 
 | Task | Subscribes to | Job |
 |---|---|---|
-| `gateway.run()` | `core.events`, and `chat.events:{channel_id}` for every channel a local socket is in | Keep open sockets right |
+| `gateway.run()` | `core.events`, `chat.events:{channel_id}` for every channel a local socket is in, and `chat.presence:{team_id}` for every team a local socket is in | Keep open sockets right |
 | `listen_core_events()` | `core.events` | Keep the cache right |
 
 Both tasks get every `core.events` message, because pub/sub gives each subscriber its own copy. A crash
@@ -105,13 +107,15 @@ sequenceDiagram
         C-->>CC: teams, channels, is_active
         CC->>R: cache it, only if no event came in meanwhile
     end
-    WS->>GW: connect(user, socket, channel_ids)
-    GW->>R: SUBSCRIBE chat.events:{channel} for channels without a local socket yet
+    WS->>GW: connect(user, socket, channel_ids, team_ids)
+    GW->>R: SUBSCRIBE chat.events:{channel} and chat.presence:{team} without a local socket yet
+    GW->>R: Add the socket's line to presence:{user_id}, the first one sends online
     loop until a close
         B->>WS: heartbeat / watch / unwatch
     end
     WS->>GW: disconnect() (always, in finally)
-    GW->>R: UNSUBSCRIBE channels that lost their last local socket
+    GW->>R: UNSUBSCRIBE channels and teams that lost their last local socket
+    GW->>R: Remove the socket's line, the last one sends offline
 ```
 
 1. chatty-chat **accepts first**, then checks. A socket closed before `accept()` reaches the browser as
@@ -120,12 +124,14 @@ sequenceDiagram
    uvicorn logs the URL, so `setup_logging` replaces `token=…` with `token=***` in its log lines.
 3. The user's memberships come from the cache or chatty-core. Unknown user: `4001`. Deactivated: `4003`.
    chatty-core unreachable: `1011 core_unavailable`.
-4. `gateway.connect` adds the socket to the registry under the user and under each of their channels.
+4. `gateway.connect` adds the socket to the registry under the user and under each of their channels and
+   teams, and records it in Redis, which tells if the user just came [online](flows/see-who-is-online.md).
 5. The socket then waits for client messages until a deadline passes or it closes.
 
 ## The ConnectionRegistry
 
-Three maps, in memory, for this process only:
+Everything here is in memory, for this process only. The sockets of each user are one map; channels and
+teams are each a `SocketGroups`, the same class created twice:
 
 ```mermaid
 flowchart LR
@@ -142,11 +148,13 @@ flowchart LR
 | user → sockets | Which sockets does this user have? | `user.deactivated`, `membership.changed` |
 | channel → sockets | Who gets an event for this channel? | Every channel event |
 | socket → channels | Which channels is this socket in? | A quick `leave_all` on disconnect |
+| team → sockets | Who gets a presence frame for this team? | Every `presence` frame |
+| socket → teams | Which teams is this socket in? | Which teams get `offline`, and a quick `leave_all` |
 
-`join()` returns `True` when a channel gets its **first** local socket, and `leave()` / `leave_all()`
-report when one loses its **last**. That is the signal to `SUBSCRIBE` or `UNSUBSCRIBE` in Redis. So a
-process subscribes to each channel once, whether 1 or 500 of its sockets are in it, and only to channels
-its own users need.
+`join()` returns `True` when a channel or team gets its **first** local socket, and `leave()` /
+`leave_all()` report when one loses its **last**. That is the signal to `SUBSCRIBE` or `UNSUBSCRIBE` in
+Redis. So a process subscribes to each channel and team once, whether 1 or 500 of its sockets are in it,
+and only to the ones its own users need.
 
 ## From a saved change to every tab
 
@@ -175,7 +183,8 @@ sequenceDiagram
    event. The gateway looks up the channel's local sockets and sends them all at once.
 3. A socket that doesn't take the frame within 5 s is removed from its channels and closed with
    `1001 too_slow` in the background, so its browser reconnects and syncs. The socket's own handler then
-   sees it is already closed and doesn't close it a second time.
+   sees it is already closed and doesn't close it a second time. It stays in its teams until then, because
+   `disconnect` needs them to send `offline`, but it gets no more `presence` frames.
 4. The sender's own tab gets the message twice, in the REST answer and as an event. The web app keeps one,
    by `id`.
 
@@ -193,10 +202,11 @@ The gateway's own `core.events` subscription keeps sockets that are already open
 | `membership.changed` `removed` | The user's sockets leave the channel (`UNSUBSCRIBE` if last). Its events stop right away |
 | `channel.updated` | Sends `{"type": "channel.updated", …}` to the channel's sockets, so the sidebar refreshes |
 | `user.deactivated` | Closes the user's sockets with `4003` |
-| `team.member.changed` `left` or `removed` | Ends a watch on that team's channel. The channel memberships come as their own `membership.changed removed` |
+| `team.member.changed` `joined` | The user's sockets join the team (`SUBSCRIBE` if first), and `online` is sent to it |
+| `team.member.changed` `left` or `removed` | Ends a watch on that team's channel, and the sockets leave the team (`UNSUBSCRIBE` if last), which gets `offline`. The channel memberships come as their own `membership.changed removed` |
 | `team.deleted` | Nothing: the team's channels reject writes, so no new events arrive |
 
-The gateway handles `core.events` and the `chat.events:*` channels on **one** connection, one message at a
+The gateway handles `core.events`, the `chat.events:*` and the `chat.presence:*` channels on **one** connection, one message at a
 time, so a `membership.changed removed` that arrived first is applied before the next channel event is
 forwarded. Every process gets the same event and updates its own sockets.
 
@@ -294,6 +304,7 @@ refused. A script runs as one step in Redis, so nothing can come in between the 
 | Redis, while publishing | `EventBus.publish` logs it; the REST call succeeds; clients get the event from `POST /sync` |
 | Redis, while listening | The gateway retries (1 s, doubling up to 30 s). When it is back it closes every local socket with `1001 gateway_restart`, because pub/sub doesn't replay what was missed, and subscribes again |
 | Redis, for the cache | Every access check asks chatty-core; nothing is cached |
+| Redis, for presence | Logged; sockets stay open. Changes meanwhile aren't heard, and `GET /teams/{team_id}/presence` answers an empty list |
 | A socket stops reading | 5 s send limit, then it leaves its channels and is closed with `1001 too_slow` |
 | chatty-core, at connect | `1011 core_unavailable` |
 | chatty-core, later | Access checks that aren't cached fail with `503 core_unavailable` |
@@ -305,8 +316,11 @@ refused. A script runs as one step in Redis, so nothing can come in between the 
   its public channels until they reconnect ([CHAT-231](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-231)).
 - **One stuck socket delays its gateway's events** by up to 5 s once, before it is dropped. A queue per
   socket is the fix if the load test shows it ([CHAT-224](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-224)).
-- **No typing, presence or unread messages yet** on the socket. The heartbeat's `visible` is stored but not
-  used yet ([CHAT-215](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-215)).
+- **No typing or unread messages yet** on the socket ([CHAT-216](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-216),
+  [CHAT-208](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-208)). The heartbeat's `visible` is stored but not used yet.
+- **Presence has a few gaps of its own:** a crash sends no `offline`, a page refresh can flicker, and a close
+  and a connect at the same moment can end in the wrong order. See
+  [see who is online](flows/see-who-is-online.md).
 - **Kafka isn't used yet.** Events go over Redis pub/sub; the outbox (`channel_events.published_at`) has no
   relay yet. See the [data map](data-map.md#kafka).
 
@@ -318,8 +332,9 @@ Full list: [known limitations](known-limitations.md).
 |---|---|
 | `chatty-chat/app/main.py` | The lifespan: both Redis clients, the gateway and the `core.events` listener |
 | `chatty-chat/app/api/routers/ws.py` | Accept, token and memberships check, client messages, deadlines, close codes |
-| `chatty-chat/app/services/gateway.py` | `Gateway`: `connect`, `disconnect`, `watch`, `run`, channel and core events, the 5 s send limit |
-| `chatty-chat/app/services/connection_registry.py` | `ConnectionRegistry`: the three maps, first and last socket |
+| `chatty-chat/app/services/gateway.py` | `Gateway`: `connect`, `disconnect`, `heartbeat`, `watch`, `run`, channel, presence and core events, the 5 s send limit |
+| `chatty-chat/app/services/connection_registry.py` | `ConnectionRegistry` and `SocketGroups`: the sockets of each user, channel and team, first and last socket |
+| `chatty-chat/app/clients/presence.py` | `PresenceStore`: who is online |
 | `chatty-chat/app/services/event_bus.py` | `EventBus.publish`, `channel_name` |
 | `chatty-chat/app/clients/core.py` | `CoreClient`: the cache, `MGET` and the Lua write |
 | `chatty-chat/app/clients/core_events.py` | `mark_stale`, `mark_all_stale`, `clear_cache`, the listener loop |
