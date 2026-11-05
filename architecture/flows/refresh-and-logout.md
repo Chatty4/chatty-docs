@@ -1,6 +1,6 @@
 # Flow: refresh and logout
 
-> **In one minute:** The web app keeps the access token in memory and the refresh token in `localStorage`.
+> **In one minute:** The web app keeps both tokens in `localStorage`, shared by its tabs.
 > When the access token expires, one call to `/auth/refresh` rotates the pair. Each refresh token works
 > exactly once. Logout revokes the token for this device only.
 
@@ -26,7 +26,7 @@ sequenceDiagram
     C->>DB: UPDATE revoked_at (old token)
     C->>DB: INSERT new refresh token row
     C-->>W: 200 {access_token, refresh_token, ...}
-    W->>W: Replace both tokens in memory / localStorage
+    W->>W: Replace both tokens in localStorage
 
     Note over U,DB: Logout (this device)
     W->>C: POST /api/core/v1/auth/logout (Bearer)
@@ -63,7 +63,20 @@ chatty-chat also verifies access tokens — it shares the public key and checks 
 13. If the token is not found or is already revoked, chatty-core does nothing and returns `204` (idempotent).
 14. If the token is active, chatty-core sets `revoked_at` and returns `204`.
 
-The access token that was in memory is discarded by the web app. It remains technically valid until it expires (at most 15 minutes), but the web app no longer sends it.
+The web app forgets both tokens, in every tab, even if the logout call failed. It remains technically valid until it expires (at most 15 minutes), but the web app no longer sends it.
+
+**Several tabs.** Sending a rotated refresh token again counts as theft and logs out every device, so tabs
+must not refresh at the same time:
+
+- The tokens are only read and replaced inside a Web Lock, one tab at a time. A tab that waited finds the new
+  token the other one stored, and uses it.
+- A tab that refreshes, logs in or logs out tells the others with `BroadcastChannel`.
+- The access token is refreshed a minute before it expires, and once more when a request gets
+  `401 unauthorized`. That request is then repeated.
+- A rejected refresh token (`401`) or a deactivated user (`403`) ends the session everywhere. A server that
+  can't be reached keeps it.
+
+Code: `chatty-web/src/lib/session.ts`.
 
 ## If a step fails
 
