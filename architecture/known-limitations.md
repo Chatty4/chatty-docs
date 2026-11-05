@@ -35,7 +35,8 @@ What is not right yet, grouped by theme.
 - **A crash sends no `offline`.** If a process dies, its sockets never reach `disconnect`. The user's presence key expires after 60 s, so new tabs see them as offline, but open tabs keep showing them as online until the user's next change.
 - **A page refresh can flicker offline and online,** also on the early reconnect before a token expires. A wait of about 5 s before `offline` would fix it.
 - **A last close and a new connect at the same moment can end in the wrong order.** `offline` can land after `online`, and the user looks offline until they reconnect.
-- **Not built yet:** files on messages ([CHAT-212](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-212)), the read endpoint and unread counts ([CHAT-128](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-128)), typing ([CHAT-216](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-216)).
+- **Unread mentions are capped at 100, like unread messages.** The contract states the cap only for `unread`; capping both keeps `mentions` at most `unread` ([CHAT-208](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-208)).
+- **Not built yet:** files on messages ([CHAT-212](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-212)), typing ([CHAT-216](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-216)).
 
 
 ## Web

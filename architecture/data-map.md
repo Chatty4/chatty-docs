@@ -29,7 +29,7 @@ without foreign keys (D-01).
 | `reactions` | One user's emoji on one message | Primary key `(message_id, user_id, emoji)`: a user can react with several emoji, each once. `emoji` is `text` (one emoji can be several code points, up to 32 bytes). Deleting a message deletes its reactions in the same transaction, without `reaction.removed` events. Foreign key to `messages` (on delete cascade) |
 | `pins` | A pinned message | Primary key `message_id`, so a message is pinned at most once. `pinned_by`, `pinned_at`; indexed by `(channel_id, pinned_at)` for the newest-first list. Max 100 per channel, counted under the channel's counter lock. Deleting a message deletes its pin in the same transaction, without `pin.removed`. Foreign key to `messages` (on delete cascade) |
 | `attachments` | A file on a message | What chatty-core's `attach` returned (D-03). Removed with its message (on delete cascade). Nothing writes it yet (CHAT-212) |
-| `read_state` | How far a user read a channel | `last_read_seq`, only ever moved forward. Today only sending moves it, for the sender; the read endpoint and unread counts are **planned** (CHAT-128) |
+| `read_state` | How far a user read a channel | `last_read_seq`, only ever moved forward (`GREATEST`). Sending moves it for the sender; `POST /channels/{id}/read` moves it, lowered to the channel's last `seq`. `GET /unread` counts the messages after it, capped at 100. No row means nothing read yet (CHAT-208) |
 
 ## Redis
 
@@ -77,6 +77,7 @@ More: [see who is online](flows/see-who-is-online.md).
 |---|---|---|
 | `core.events` | chatty-core's 5 events (`membership.changed`, `team.member.changed`, `channel.updated`, `team.deleted`, `user.deactivated`), published after each change commits ([core-events.md](https://github.com/Chatty4/chatty-infra/blob/dev/docs/core-events.md), D-06, D-08) | No: a subscriber that isn't connected misses the event |
 | `chat.presence:{team_id}` | `presence` frames (`online`, `offline`). Only gateways with a socket in the team subscribe | No: a tab that opens later asks `GET /teams/{team_id}/presence` |
+| `chat.users:{user_id}` | Live messages for every socket of one user: `unread` after `POST /channels/{id}/read`. Only gateways with a socket of the user subscribe, by exact name (D-12) | No: the web app calls `GET /unread` after every reconnect |
 | `chat.events:{channel_id}` | chatty-chat's channel events (`message.created`, `message.edited`, `message.deleted`, `reaction.added`, `reaction.removed`, `pin.added`, `pin.removed`), published after the commit. Only gateways with a socket in the channel subscribe ([events.md](https://github.com/Chatty4/chatty-infra/blob/dev/docs/events.md)) | No, but every event is also in `channel_events`, so `POST /sync` recovers a missed one |
 
 chatty-chat listens to `core.events` twice: the cache listener marks the keys an event makes stale (bump
