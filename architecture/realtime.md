@@ -310,7 +310,7 @@ A socket can follow one public channel the user hasn't joined, for example while
 stateDiagram-v2
     [*] --> NotWatching
     NotWatching --> Watching: watch(X), X is public in one of my teams
-    NotWatching --> NotWatching: watch(X), not public in my teams: error cannot_watch
+    NotWatching --> NotWatching: watch(X), not public in my teams, error cannot_watch
     Watching --> Watching: watch(Y) replaces X
     Watching --> NotWatching: unwatch(X), or I leave X's team
     Watching --> Member: membership.changed added for X
