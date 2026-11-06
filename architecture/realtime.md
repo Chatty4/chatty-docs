@@ -19,7 +19,7 @@ cache without serving stale access.
 | Process | One running uvicorn with the FastAPI app. There can be several; each is a gateway for its own sockets | `app/main.py` |
 | Gateway | One per process. Owns one Redis pub/sub connection, receives events, sends them to local sockets | `app/services/gateway.py` |
 | ConnectionRegistry | In memory, per process: which sockets each user has, and which sockets are in each channel and team | `app/services/connection_registry.py` |
-| EventBus | The sending side: one `PUBLISH` on `chat.events:{channel_id}` per channel event, and on `chat.users:{user_id}` for a live message to one user | `app/services/event_bus.py` |
+| EventBus | The sending side: one `PUBLISH` on `chat.events:{channel_id}` per channel event, on `chat.users:{user_id}` for a live message to one user, and on `chat.typing:{channel_id}` when someone types | `app/services/event_bus.py` |
 | PresenceStore | Who is online, in Redis, shared by every process | `app/clients/presence.py` |
 | Redis cache | chatty-core's `/internal` answers, kept 5 minutes, with version counters | `app/clients/core.py` |
 | `core.events` listener | Deletes the cache keys a chatty-core event makes stale | `app/clients/core_events.py` |
@@ -60,7 +60,7 @@ Redis does three unrelated things for chatty-chat.
 | Job | How it works | Keys or channels |
 |---|---|---|
 | **Cache** | Plain keys with a TTL. A read that finds the key is a **hit**; a read that doesn't is a **miss**, and chatty-chat asks chatty-core and stores the answer | `members:{user_id}`, `channel:{channel_id}`, and the counters `version:members:{user_id}`, `version:channel:{channel_id}`, `version:all` |
-| **Pub/sub** | Named channels. A `PUBLISH` reaches every connection that is `SUBSCRIBE`d to that name **right now**. Nothing is stored: a subscriber that isn't listening misses the message | `chat.events:{channel_id}` (one per chat channel), `chat.presence:{team_id}` (one per team), `chat.users:{user_id}` (one per user with an open socket), `core.events` (chatty-core's) |
+| **Pub/sub** | Named channels. A `PUBLISH` reaches every connection that is `SUBSCRIBE`d to that name **right now**. Nothing is stored: a subscriber that isn't listening misses the message | `chat.events:{channel_id}` and `chat.typing:{channel_id}` (one each per chat channel), `chat.presence:{team_id}` (one per team), `chat.users:{user_id}` (one per user with an open socket), `core.events` (chatty-core's) |
 | **Presence** | One line per open socket, and a set of online users per team. It isn't a copy of anything: this is the only record. See [see who is online](flows/see-who-is-online.md) | `presence:{user_id}`, `online:{team_id}` |
 
 chatty-chat uses two Redis clients (`app/main.py`):
@@ -77,7 +77,7 @@ The app's lifespan creates the registry and the gateway and starts two backgroun
 
 | Task | Subscribes to | Job |
 |---|---|---|
-| `gateway.run()` | `core.events`, `chat.events:{channel_id}` for every channel a local socket is in, `chat.presence:{team_id}` for every team a local socket is in, and `chat.users:{user_id}` for every user with a local socket | Keep open sockets right |
+| `gateway.run()` | `core.events`, `chat.events:{channel_id}` and `chat.typing:{channel_id}` for every channel a local socket is in, `chat.presence:{team_id}` for every team a local socket is in, and `chat.users:{user_id}` for every user with a local socket | Keep open sockets right |
 | `listen_core_events()` | `core.events` | Keep the cache right |
 
 Both tasks get every `core.events` message, because pub/sub gives each subscriber its own copy. A crash
@@ -108,7 +108,7 @@ sequenceDiagram
         CC->>R: cache it, only if no event came in meanwhile
     end
     WS->>GW: connect(user, socket, channel_ids, team_ids)
-    GW->>R: SUBSCRIBE chat.users:{user}, chat.events:{channel} and chat.presence:{team} without a local socket yet
+    GW->>R: SUBSCRIBE chat.users:{user}, chat.events:{channel}, chat.typing:{channel} and chat.presence:{team} without a local socket yet
     GW->>R: Add the socket's line to presence:{user_id}, the first one sends online
     loop until a close
         B->>WS: heartbeat / watch / unwatch
@@ -222,6 +222,68 @@ sequenceDiagram
 4. `unread` has no `seq` and isn't stored. If a socket misses it, the web app's `GET /unread` after the
    reconnect brings the badges back in line.
 
+## Someone is typing
+
+While someone types, their tab sends a small `typing` message on the WebSocket, at most every 3 s. chatty-chat
+checks it and passes it to the others in the channel. It's a short-lived signal, not data: no database row, no
+`seq`, no event row, no REST endpoint, no `/sync` and no Kafka. If one is lost nothing breaks, because the next
+one comes 3 s later or the text just goes away.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant A as Ana's tab
+    participant GA as Gateway A
+    participant R as Redis
+    participant GB as Gateway B
+    participant B as Bob's tab
+
+    A->>GA: {"type": "typing", "channel_id": "42aa…"}
+    GA->>GA: Run the checks, add Ana's user_id from the socket
+    GA->>R: PUBLISH chat.typing:42aa
+    R-->>GA: the frame
+    R-->>GB: the frame
+    GA->>GA: Skip Ana's own tabs and stuck sockets
+    GB-->>B: {"type": "typing", "channel_id": "42aa…", "user_id": "ana"}
+    Note over A,B: Ana keeps typing: step 1 repeats every 3 s
+    Note over A,B: Ana stops: no more frames, nothing else is sent
+```
+
+**The checks.** Each one that fails ignores the message: no `error`, and the socket stays open.
+
+```mermaid
+flowchart TD
+    M[typing arrives] --> C1{Socket is in the channel, and not only watching it?}
+    C1 -->|no| X[Ignore it]
+    C1 -->|yes| C2{Less than 3 s since this socket's last one for this channel?}
+    C2 -->|yes| X
+    C2 -->|no| S[Save the time]
+    S --> C3{get_writable_channel: can the user still write?}
+    C3 -->|no, or an error| X
+    C3 -->|yes| P[PUBLISH on chat.typing:channel_id]
+```
+
+1. **In the channel**, from the registry, in memory. A socket that only watches the channel is in its sockets
+   too, but it can't write.
+2. **The 3 s limit**, in memory: `Gateway._typing_at` keeps the last time per socket and channel, and
+   `disconnect` removes the socket. It's per socket, so two tabs can send two frames per 3 s.
+3. **Can write**, which refuses archived channels. It's normally one cached Redis read. It comes last, so random
+   channel IDs can't cause chatty-core calls.
+4. **Publish**, with `EventBus.send_typing`. A Redis error is logged, and the socket stays open.
+
+`typing` doesn't reset the 60 s heartbeat timer. Only a heartbeat keeps the socket alive.
+
+**Who it is.** The client never says. The token is checked when the socket opens, and the server adds `user_id`
+from that user, so nobody can pretend someone else is typing. A `user_id` sent by the client is ignored.
+
+**Who hears it.** Whoever gets a channel's events also gets its typing: `_subscribe_channels` listens to
+`chat.events:{channel_id}` and `chat.typing:{channel_id}` together, so the channel's first local socket
+subscribes to both and the last one unsubscribes from both. `handle_typing` sends the frame to the channel's local
+sockets, watchers included, except the typing user's own tabs and stuck sockets.
+
+**Stopping.** There is no "stopped typing" message, so a closed tab or a crash needs no cleanup. The frames stop,
+and the web app hides the text after 5 s, or as soon as that user's `message.created` arrives.
+
 ## chatty-core's events on open sockets
 
 The gateway's own `core.events` subscription keeps sockets that are already open right:
@@ -236,7 +298,7 @@ The gateway's own `core.events` subscription keeps sockets that are already open
 | `team.member.changed` `left` or `removed` | Ends a watch on that team's channel, and the sockets leave the team (`UNSUBSCRIBE` if last), which gets `offline`. The channel memberships come as their own `membership.changed removed` |
 | `team.deleted` | Nothing: the team's channels reject writes, so no new events arrive |
 
-The gateway handles `core.events`, the `chat.events:*`, `chat.presence:*` and `chat.users:*` channels on **one** connection, one message at a
+The gateway handles `core.events`, the `chat.events:*`, `chat.typing:*`, `chat.presence:*` and `chat.users:*` channels on **one** connection, one message at a
 time, so a `membership.changed removed` that arrived first is applied before the next channel event is
 forwarded. Every process gets the same event and updates its own sockets.
 
@@ -248,7 +310,7 @@ A socket can follow one public channel the user hasn't joined, for example while
 stateDiagram-v2
     [*] --> NotWatching
     NotWatching --> Watching: watch(X), X is public in one of my teams
-    NotWatching --> NotWatching: watch(X), not public in my teams: error cannot_watch
+    NotWatching --> NotWatching: watch(X), not public in my teams, error cannot_watch
     Watching --> Watching: watch(Y) replaces X
     Watching --> NotWatching: unwatch(X), or I leave X's team
     Watching --> Member: membership.changed added for X
@@ -334,6 +396,7 @@ refused. A script runs as one step in Redis, so nothing can come in between the 
 | Redis, while publishing | `EventBus.publish` logs it; the REST call succeeds; clients get the event from `POST /sync` |
 | Redis, while listening | The gateway retries (1 s, doubling up to 30 s). When it is back it closes every local socket with `1001 gateway_restart`, because pub/sub doesn't replay what was missed, and subscribes again |
 | Redis, for the cache | Every access check asks chatty-core; nothing is cached |
+| Redis, for typing | Logged; sockets stay open. Nobody sees typing, and messages aren't affected |
 | Redis, for presence | Logged; sockets stay open. Changes meanwhile aren't heard, and `GET /teams/{team_id}/presence` answers an empty list |
 | A socket stops reading | 5 s send limit, then it leaves its channels and is closed with `1001 too_slow` |
 | chatty-core, at connect | `1011 core_unavailable` |
@@ -346,7 +409,7 @@ refused. A script runs as one step in Redis, so nothing can come in between the 
   its public channels until they reconnect ([CHAT-231](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-231)).
 - **One stuck socket delays its gateway's events** by up to 5 s once, before it is dropped. A queue per
   socket is the fix if the load test shows it ([CHAT-224](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-224)).
-- **No typing yet** on the socket ([CHAT-216](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-216)).
+- **The web app doesn't send or show typing yet** ([CHAT-217](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-217)).
   The heartbeat's `visible` is stored but not used yet.
 - **Presence has a few gaps of its own:** a crash sends no `offline`, a page refresh can flicker, and a close
   and a connect at the same moment can end in the wrong order. See
@@ -361,12 +424,13 @@ Full list: [known limitations](known-limitations.md).
 | File | What is there |
 |---|---|
 | `chatty-chat/app/main.py` | The lifespan: both Redis clients, the gateway and the `core.events` listener |
-| `chatty-chat/app/api/routers/ws.py` | Accept, token and memberships check, client messages, deadlines, close codes |
-| `chatty-chat/app/services/gateway.py` | `Gateway`: `connect`, `disconnect`, `heartbeat`, `watch`, `run`, channel, presence and core events, the 5 s send limit |
+| `chatty-chat/app/api/routers/ws.py` | Accept, token and memberships check, client messages, `handle_typing`, deadlines, close codes |
+| `chatty-chat/app/services/gateway.py` | `Gateway`: `connect`, `disconnect`, `heartbeat`, `can_type`, `watch`, `run`, channel, typing, presence and core events, the 5 s send limit |
 | `chatty-chat/app/services/connection_registry.py` | `ConnectionRegistry` and `SocketGroups`: the sockets of each user, channel and team, first and last socket |
 | `chatty-chat/app/clients/presence.py` | `PresenceStore`: who is online |
-| `chatty-chat/app/services/event_bus.py` | `EventBus.publish`, `channel_name` |
+| `chatty-chat/app/services/event_bus.py` | `EventBus.publish`, `send_to_user`, `send_typing`, the Redis channel names |
 | `chatty-chat/app/clients/core.py` | `CoreClient`: the cache, `MGET` and the Lua write |
 | `chatty-chat/app/clients/core_events.py` | `mark_stale`, `mark_all_stale`, `clear_cache`, the listener loop |
 | `chatty-chat/app/core/logging.py` | `RedactTokens`: hides `token=…` in uvicorn's log lines |
 | `chatty-chat/tests/integration/test_two_gateways_real.py` | One event reaching sockets on two gateways |
+| `chatty-chat/tests/integration/test_typing_real.py` | Typing reaching another gateway, but not the user's own tabs |

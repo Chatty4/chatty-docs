@@ -17,6 +17,7 @@ A flow follows one user journey across services. Each page has a picture first, 
 | [Edit and delete a message](edit-and-delete-message.md) | Who can change a message, and what stays when it is deleted? | web, chat, core, Redis |
 | [React to a message](react-to-a-message.md) | How do reaction counts stay right when the same emoji is added twice? | web, chat, core, Redis |
 | [Pin a message](pin-a-message.md) | How does the 100-pin limit hold when two people pin at once? | web, chat, core, Redis |
+| [Someone is typing](../realtime.md#someone-is-typing) | How does "Ana is typing…" reach the others, and why is nothing stored? | web, chat, Redis |
 | [See who is online](see-who-is-online.md) | How does a user stay online with tabs on two processes, and what does a new tab see? | web, chat, Redis |
 | [Open a channel, reconnect and sync](reconnect-and-sync.md) | How does a tab catch up after a gap or a lost connection? | web, chat |
 | [A change in chatty-core reaches chatty-chat](core-events.md) | How do removed users lose access at once, in the cache and on open sockets? | core, Redis, chat |

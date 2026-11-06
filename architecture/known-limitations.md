@@ -36,7 +36,7 @@ What is not right yet, grouped by theme.
 - **A page refresh can flicker offline and online,** also on the early reconnect before a token expires. A wait of about 5 s before `offline` would fix it.
 - **A last close and a new connect at the same moment can end in the wrong order.** `offline` can land after `online`, and the user looks offline until they reconnect.
 - **Unread mentions are capped at 100, like unread messages.** The contract states the cap only for `unread`; capping both keeps `mentions` at most `unread` ([CHAT-208](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-208)).
-- **Not built yet:** files on messages ([CHAT-212](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-212)), typing ([CHAT-216](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-216)).
+- **Not built yet:** files on messages ([CHAT-212](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-212)).
 
 
 ## Web

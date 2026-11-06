@@ -54,9 +54,12 @@ sequenceDiagram
 5. **Watch.** `{"type": "watch", "channel_id": …}` follows one public channel of the user's teams that they
    haven't joined; a new watch replaces the old one, `unwatch` ends it. Not public in my teams:
    `{"type": "error", "code": "cannot_watch"}`, and the socket stays open.
-6. **Anything else** (invalid JSON, unknown types, binary frames) is ignored. A message over 4 KB closes the
+6. **Typing.** `{"type": "typing", "channel_id": …}` tells the others in the channel, at most every 3 s. It is
+   ignored without an error if the user can't write there, and it doesn't reset the 60 s timer. See
+   [live events](../realtime.md#someone-is-typing).
+7. **Anything else** (invalid JSON, unknown types, binary frames) is ignored. A message over 4 KB closes the
    socket with `1009`.
-7. **Close and reconnect.** The web app refreshes the token about a minute before `exp` and reconnects
+8. **Close and reconnect.** The web app refreshes the token about a minute before `exp` and reconnects
    early. After any close but `4003` it reconnects with backoff and calls `POST /sync`
    ([reconnect and sync](reconnect-and-sync.md)).
 
@@ -74,8 +77,7 @@ sequenceDiagram
 
 ## ⚠️ Known gaps
 
-- **No typing yet.** The contract has it ([CHAT-216](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-216)). The heartbeat's `visible` is
-  stored but not used.
+- **The heartbeat's `visible` is stored but not used.**
 - **`4008 too_many_messages` isn't sent yet**: there is no rate limit on client messages.
 - **A channel removal during the connect can be missed.** It arrives after the memberships are loaded but
   before the socket joins its channels, so the socket gets that channel's events until it reconnects
@@ -86,8 +88,8 @@ sequenceDiagram
 
 | File | What is there |
 |---|---|
-| `chatty-chat/app/api/routers/ws.py` | `websocket_endpoint`, `handle_message`, the deadlines |
+| `chatty-chat/app/api/routers/ws.py` | `websocket_endpoint`, `handle_message`, `handle_typing`, the deadlines |
 | `chatty-chat/app/schemas/ws.py` | `Heartbeat`, `Watch`, `Unwatch`, `ClientMessage` |
-| `chatty-chat/app/services/gateway.py` | `connect`, `disconnect`, `heartbeat`, `watch`, `unwatch` |
+| `chatty-chat/app/services/gateway.py` | `connect`, `disconnect`, `heartbeat`, `can_type`, `watch`, `unwatch` |
 | `chatty-chat/app/core/codes.py` | `CloseCode` |
 | `chatty-chat/tests/api/test_ws.py` | Close codes, heartbeats and watch |
