@@ -1,7 +1,7 @@
 # chatty-web
 
-React app in the browser: login, teams, channels, DMs, invites, messages, reactions and pins. Later unread
-counts, typing, presence dots and files.
+React app in the browser: login, teams, channels, DMs, invites, messages, reactions, pins, unread badges,
+presence dots and the typing indicator. Later files.
 
 ## At a glance
 
@@ -54,10 +54,13 @@ hides what they would refuse.
 | Sending | Optimistic: the message shows at once as pending, then as sent or failed with the reason. A retry reuses the `client_msg_id`, and a failed message can be dismissed | [send a message](../../architecture/flows/send-message.md) |
 | Messages | Markdown, mentions with autocomplete, emoji, edit, delete, drafts per channel, older messages on scroll, jump to a message | [edit and delete](../../architecture/flows/edit-and-delete-message.md) |
 | Reactions, pins | Chips with counts, an emoji picker, a pin mark and a pins panel. Reaction counts change from events only, so a reaction isn't counted twice | [react](../../architecture/flows/react-to-a-message.md), [pin](../../architecture/flows/pin-a-message.md) |
+| Unread | Badges in the sidebar from `GET /unread`, on load, on a team switch and after every reconnect. New messages add to them, and `unread` messages keep my other tabs in step. A channel is marked read while its newest message is on screen | |
+| Presence | Who is online in the active team, from `GET /teams/{team_id}/presence` and then the `presence` messages. Shows a green dot on message avatars and on DMs in the sidebar | [see who is online](../../architecture/flows/see-who-is-online.md) |
+| Typing | The composer sends `typing` while there is text. Who is typing shows as a row after the last message, like a message with bouncing dots | [someone is typing](../../architecture/realtime.md#someone-is-typing) |
 
 Providers wrap the app shell in this order, so each one can use the ones before it: `AuthProvider` (around
-the whole app), then `WsProvider`, `MessagesProvider`, `TeamsProvider`, `ChannelsProvider`. The last four only
-exist while the user is logged in, so logging out closes the socket and drops the messages in memory.
+the whole app), then `WsProvider`, `MessagesProvider`, `TeamsProvider`, `ChannelsProvider`, `UnreadProvider`,
+`PresenceProvider`, `TypingProvider`. All but the first only exist while the user is logged in, so logging out closes the socket and drops the messages in memory.
 
 ## If something is down
 
@@ -72,10 +75,6 @@ exist while the user is logged in, so logging out closes the socket and drops th
 
 ## ⚠️ Known gaps
 
-- No unread badges, typing or presence dots yet: the WebSocket types exist, but nothing handles them, and
-  `GET /teams/{team_id}/presence` isn't called ([CHAT-209](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-209),
-  [CHAT-217](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-217),
-  [CHAT-197](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-197)).
 - The sidebar doesn't follow new channels and DMs: it reloads when the team changes.
 - The web app never sends `watch`.
 - The Attach file button does nothing yet ([CHAT-214](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-214)).
@@ -102,4 +101,9 @@ Full list: [known limitations](../../architecture/known-limitations.md#web).
 | `src/features/messages/store/event-sequencer.ts` | Duplicates, next event, gap fills |
 | `src/features/messages/store/channel-reducer.ts`, `apply-event.ts` | Pure state changes, tested without a browser |
 | `src/features/messages/utils/permissions.ts` | D-05 in the UI |
+| `src/features/unread/` | The counts, the provider and the sidebar badge |
+| `src/features/presence/` | Who is online: the store and the provider |
+| `src/features/typing/store/typing.ts` | Who is typing per channel, the send limit and the label, tested without a browser |
+| `src/features/typing/hooks/use-send-typing.ts` | Sends `typing`, and holds a change that comes too soon |
+| `src/features/typing/ui/` | The provider, the row after the last message and the dots |
 | `nginx/default.conf.template` | The proxy, headers and the single-page fallback |

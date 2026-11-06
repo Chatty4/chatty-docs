@@ -168,10 +168,9 @@ sequenceDiagram
 
 - **An access token still works after logout**, for up to 15 minutes (D-10).
 - **Each token renewal closes the socket first**, so a user with one tab has a moment with no socket about every
-  14 minutes. It can show as offline and online once the web app shows presence.
+  14 minutes. It can show as offline and online to the others.
 - **A new channel or DM doesn't show in the sidebar** until the team changes or the page reloads.
-- **Channels that aren't open get no update**: there are no unread counts yet
-  ([CHAT-209](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-209)).
+- **Channels that aren't open only update their badge.** Their messages load when the channel is opened.
 
 More: [known limitations](../known-limitations.md#web).
 

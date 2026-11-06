@@ -42,10 +42,10 @@ What is not right yet, grouped by theme.
 ## Web
 
 - **Tokens are in `localStorage`.** The tabs need to share them, but any script running on the page can read them, and the Nginx config sets no `script-src` Content Security Policy.
-- **No unread badges, typing or presence dots.** The WebSocket types exist, but nothing handles those frames, and `GET /teams/{team_id}/presence` isn't called ([CHAT-209](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-209), [CHAT-217](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-217), [CHAT-197](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-197)).
-- **Each token renewal closes the socket before opening the next.** Together with the presence flicker above, a user with one tab can show as offline and online about every 14 minutes once dots are built.
+- **A typing letter right after a message can show up to about 3 s late.** The server's 3 s limit still counts from the last `typing`, so the web app waits for it.
+- **Each token renewal closes the socket before opening the next.** Together with the presence flicker above, a user with one tab can show as offline and online about every 14 minutes.
 - **The sidebar doesn't follow new channels and DMs.** Being added to one shows only after the team changes or the page reloads.
-- **Events of channels that aren't open are ignored.** They load from history when opened, and nothing tells the user there is something new.
+- **Channels that aren't open only update their badge.** Their messages load from history when opened.
 - **The web app never sends `watch`.**
 - **The Attach file button does nothing yet** ([CHAT-214](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-214)).
 - **The connection status isn't shown.** A dropped socket looks like a quiet channel.
