@@ -120,7 +120,7 @@ otherwise each frame would wait 5 s on it.
   wait of about 5 s before `offline` would fix it, if it's annoying in practice.
 - **A close and a new connect at the same moment can end in the wrong order.** If a last socket closes while
   a new one opens, `offline` can land after `online`, and the user looks offline until they reconnect.
-- **The web app doesn't show it yet** ([CHAT-197](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-197)).
+- **The web app shows dots on message avatars and DMs only.** There is no list of who is online.
 
 ## Key code
 

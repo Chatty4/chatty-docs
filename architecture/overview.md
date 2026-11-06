@@ -6,7 +6,7 @@ The big picture: every service, how they talk, and auth in 30 seconds.
 
 | Service | What it owns | Stack | Status |
 |---|---|---|---|
-| chatty-web | The app in the browser | React (Vite) | login, teams, channels, DMs, invites, messages, reactions and pins work; unread, typing, presence and files not yet |
+| chatty-web | The app in the browser | React (Vite) | login, teams, channels, DMs, invites, messages, reactions, pins, unread, presence and typing work; files not yet |
 | chatty-core | Users, auth, teams, invites, channels, DMs, files | Django | works, except files |
 | chatty-chat | Messages, the live WebSocket, sync, reactions, pins, presence, typing, search | FastAPI | messages, reactions, pins, presence, typing, history, sync and the WebSocket gateway work; files and search not yet |
 | chatty-infra | Docker Compose, contracts, setup scripts | | works |

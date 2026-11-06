@@ -284,6 +284,17 @@ sockets, watchers included, except the typing user's own tabs and stuck sockets.
 **Stopping.** There is no "stopped typing" message, so a closed tab or a crash needs no cleanup. The frames stop,
 and the web app hides the text after 5 s, or as soon as that user's `message.created` arrives.
 
+**In the web app.** The composer tells `useSendTyping` about every change of the text. It sends `typing` at
+most every 3.2 s, a little above the server's 3 s, so a late message can't be dropped and leave a gap that
+hides someone who is still typing. A change that comes too soon waits for the rest of the 3.2 s instead of
+being lost. Clearing the text, sending the message or changing channel drops what was waiting. Only members
+send it, and nothing is sent in an archived channel.
+
+`TypingProvider` keeps who is typing per channel. The open channel shows them as a row after the last
+message, laid out like a message: avatar, name, "is typing…" and a bubble with bouncing dots. Two people
+show both names, and three or more show "Several people". The list follows the row only if the reader was
+already at the bottom.
+
 ## chatty-core's events on open sockets
 
 The gateway's own `core.events` subscription keeps sockets that are already open right:
@@ -409,8 +420,9 @@ refused. A script runs as one step in Redis, so nothing can come in between the 
   its public channels until they reconnect ([CHAT-231](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-231)).
 - **One stuck socket delays its gateway's events** by up to 5 s once, before it is dropped. A queue per
   socket is the fix if the load test shows it ([CHAT-224](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-224)).
-- **The web app doesn't send or show typing yet** ([CHAT-217](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-217)).
-  The heartbeat's `visible` is stored but not used yet.
+- **A letter right after a message can show up to about 3 s late,** because the 3 s limit still counts from
+  the last `typing`.
+- **The heartbeat's `visible` is stored but not used yet.**
 - **Presence has a few gaps of its own:** a crash sends no `offline`, a page refresh can flicker, and a close
   and a connect at the same moment can end in the wrong order. See
   [see who is online](flows/see-who-is-online.md).
