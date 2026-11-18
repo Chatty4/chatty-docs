@@ -15,6 +15,7 @@ Owned by chatty-core. Nobody else reads or writes it. All IDs are UUIDs (D-01).
 | `invites` | An invite link | `code` is 8 characters and unique. `max_uses = 0` is unlimited, `expires_at = null` never expires. Revoking sets `revoked_at` |
 | `channels` | A channel or a DM | `kind`: `public`, `private` or `dm`. Names are unique per team (not for DMs). `is_default` channels are joined on invite. A DM has `dm_key`, the sorted member IDs, unique per team, so the same people always get the same DM. Archiving sets `archived_at` |
 | `channel_members` | A user in a channel | `role`: `owner` or `member`. My settings live here: `notify_level` (`all`, `mentions`, `none`), `muted`, `hidden` |
+| `files` | An avatar, team icon or attachment in MinIO | `status`: `pending` (upload URL given) or `ready` (confirmed). `attached_at` is set when it's in a message (D-03). Deleting sets `deleted_at`; `clean_up_files` then removes the object from MinIO and the row, every hour (D-17) |
 
 ## chat_db (Postgres)
 
@@ -89,7 +90,8 @@ subscribes (at start and after Redis comes back) it bumps `version:all` and dele
 
 ## MinIO
 
-Runs in the dev stack, not used yet. **Planned:** avatars, team icons and message attachments (D-02, D-03).
+One bucket, `chatty`. chatty-core uploads and deletes avatars, team icons and attachments; chatty-chat will
+only sign attachment downloads (D-02, D-03). `clean_up_files` removes unused objects every hour (D-17).
 
 ## Kafka
 

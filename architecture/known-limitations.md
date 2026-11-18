@@ -15,6 +15,7 @@ What is not right yet, grouped by theme.
 - **Deleting a team doesn't stop live events right away.** chatty-core sends only `team.deleted`, with no `membership.changed removed` for each channel, and chatty-chat doesn't unsubscribe open WebSockets from the team's channels for it yet. Members keep receiving those channels' events until they reconnect or their access token expires (up to 15 minutes). Removal from a channel, leaving or being removed from a team (CHAT-263) and deactivation are immediate ([CHAT-185](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-185)).
 - **A user removed from a team can still watch its public channels until they reconnect.** chatty-chat checks a WebSocket `watch` against the memberships it loaded when the socket connected, so after leaving or being removed from a team, the user can start a new watch on that team's public channels and receive their live events until they reconnect or their access token expires (up to 15 minutes). A watch that is already running ends right away ([CHAT-231](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-231)).
 - **No unarchive.** An archived channel stays read-only; there is no endpoint to undo it.
+- **A deleted team's attachments stay listed in chatty-chat.** `clean_up_files` removes the files from MinIO, but chatty-chat's `attachments` rows stay. Nobody can reach them, because the team answers `404`.
 
 ## Chat
 
@@ -55,3 +56,4 @@ What is not right yet, grouped by theme.
 ## Infra
 
 - **No HTTPS in the dev stack.** All traffic between the browser, Nginx, and the service containers is plain HTTP. TLS termination is expected to happen outside this stack in any non-dev environment, but where is not decided yet. Until then chatty-core sends no HSTS header, sets no `SECURE_SSL_REDIRECT` / `SECURE_PROXY_SSL_HEADER`, and CI doesn't run `manage.py check --deploy`.
+- **The file cleanup runs from a loop in the container.** `clean_up_files` runs every hour after the `core` container starts, and the timer restarts with the container. Production needs a real scheduled job, like the other cleanups.

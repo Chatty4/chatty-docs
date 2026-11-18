@@ -17,6 +17,7 @@ Why Chatty looks this way. The full list with status is in [chatty-infra/docs/de
 | D-09 | The client IP for rate limits comes from `X-Real-IP` set by Nginx, only when `BEHIND_PROXY=True` | Behind a proxy every request has the proxy's IP, and clients can fake headers |
 | D-10 | Access tokens stay valid until they expire (15 minutes), even after logout | No lookup on every request in either service |
 | D-11 | Any member can create invites that never expire | Owners and admins see and revoke every invite, and a member's invites are revoked when they leave |
+| D-17 | chatty-core's hourly cleanup job deletes files nobody uses: unsent attachments after 24 h, replaced avatars and icons, and every file of a deleted team | Without it, a file that never goes into a message stays in MinIO forever |
 
-**Status:** all accepted. **Built today:** D-01, D-05, D-06, D-07, D-08, D-09, D-10, D-11. The others wait for
+**Status:** all accepted. **Built today:** D-01, D-05, D-06, D-07, D-08, D-09, D-10, D-11, D-17. The others wait for
 files, messages in chatty-chat or the web app.
