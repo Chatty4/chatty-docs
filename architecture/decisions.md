@@ -7,7 +7,7 @@ Why Chatty looks this way. The full list with status is in [chatty-infra/docs/de
 | # | Decision | Why, in one line |
 |---|---|---|
 | D-01 | Every ID is a UUID, in both services | Nobody can guess IDs by counting, and both services use the same type |
-| D-02 | chatty-chat signs attachment download links itself | One request per download, no call to chatty-core |
+| D-02 | chatty-chat signs attachment download links itself, all the files of a message in one call | No call to chatty-core, one call per message, and the links work in `<img>` without a token |
 | D-03 | chatty-chat calls chatty-core to attach a file before it saves the message, and to detach it if saving fails | The cleanup job never deletes a file that is in a sent message |
 | D-04 | The web app un-hides a hidden DM when it gets a new message | No backend work and no extra call on every DM message |
 | D-05 | Authors edit and delete their own messages; channel owners and team owners or admins can also delete | Same people who can manage the channel |
