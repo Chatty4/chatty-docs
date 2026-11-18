@@ -46,6 +46,7 @@ Details: [auth and security](../../architecture/auth-and-security.md).
 | My channel settings | Notification level, muted, hidden (`PUT channels/{channel_id}/me`) | `api-core.md` |
 | Users (admin) | Deactivate users from Django admin. Users are never deleted | `users/admin.py` |
 | Cleanup | `python manage.py purge_refresh_tokens` deletes old expired or revoked refresh tokens | `authn/management/commands/` |
+| Cleanup | `python manage.py clean_up_files` runs every hour from the `core` container (CHAT-168). It removes files nobody uses from MinIO and the database: uploads never confirmed, attachments not sent within 24 h, replaced avatars and team icons, and every file of a deleted team (D-17) | `files/management/commands/` |
 
 **Who can do what in a channel** (rules in `channels/access.py`):
 
