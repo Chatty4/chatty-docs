@@ -22,6 +22,7 @@ A flow follows one user journey across services. Each page has a picture first, 
 | [Open a channel, reconnect and sync](reconnect-and-sync.md) | How does a tab catch up after a gap or a lost connection? | web, chat |
 | [A change in chatty-core reaches chatty-chat](core-events.md) | How do removed users lose access at once, in the cache and on open sockets? | core, Redis, chat |
 | [Upload a file](upload-a-file.md) | How does a file reach MinIO without passing through a service, and when is it cleaned up? | web, core, MinIO, chat |
+| [Search messages](search-messages.md) | How does search find only messages I may read, and jump to the one I click? | web, chat, core |
 | [Get a push notification](get-a-push-notification.md) | How does a message reach a browser with Chatty closed, and why only once? | web, chat, Kafka, Redis, core |
 
 How the live parts fit together (sockets, Redis pub/sub, gateways, the cache): [live events](../realtime.md).
