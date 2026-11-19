@@ -95,7 +95,8 @@ sequenceDiagram
 3. Every invite they created is revoked, so their links stop letting people in.
 
 **Deleting a team** (`DELETE /teams/{team_id}`, owner only) sets `deleted_at`. The team, its channels
-and its invites then return `404`.
+and its invites then return `404`. Within an hour, `clean_up_files` removes all its files from MinIO,
+attachments of sent messages too, because a deleted team can't be restored (D-17).
 
 ## If a step fails
 
