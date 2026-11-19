@@ -29,14 +29,14 @@ A refresh token is a 64-character random hex string prefixed with `rt_`. It is n
 **How rotation works:**
 
 1. Client sends the current refresh token to `POST /api/core/v1/auth/refresh`.
-2. chatty-core looks up the hash, verifies it is not revoked or expired, then in one atomic transaction revokes the old token and creates a new one.
+2. chatty-core looks up the hash, verifies it is not expired and the user is active, then in one atomic transaction marks the old token as rotated (`revoked_at`) and creates a new one.
 3. The response contains a new access token + new refresh token. The client replaces both.
 
-**Reuse detection:** if a refresh token that has already been rotated is replayed, chatty-core treats it as a theft signal and revokes _all_ active refresh tokens for that user. Every device is logged out.
+**Reuse detection:** if a refresh token that was rotated more than 30 s ago (`JWT_REFRESH_REUSE_GRACE`) is replayed, chatty-core treats it as a theft signal and deletes _all_ refresh tokens of that user. Every device is logged out. Within the 30 s it is a retry after a lost answer: the token is rotated again and gets one more new pair. Only rotation sets `revoked_at`, so a rotated token stays in the table until it expires as the proof of a later reuse.
 
-**Logout** (`POST /api/core/v1/auth/logout`) revokes the single refresh token supplied in the request body. The token must belong to the authenticated user; supplying another user's token returns 403.
+**Logout** (`POST /api/core/v1/auth/logout`) deletes the single refresh token supplied in the request body. The token must belong to the authenticated user; supplying another user's token returns 403.
 
-**Change password** (`POST /api/core/v1/auth/password`) revokes all _other_ active refresh tokens for the user, keeping the current device's token alive. All other devices are logged out.
+**Change password** (`POST /api/core/v1/auth/password`) deletes all _other_ refresh tokens of the user, keeping the current device's token alive. All other devices are logged out.
 
 ## Service token (/internal)
 
@@ -55,11 +55,14 @@ The token is set in both services via the `CORE_SERVICE_TOKEN` environment varia
 | Endpoint | Limit | Window | Key |
 |---|---|---|---|
 | `POST /auth/register` | 10 attempts | 1 hour | per client IP |
-| `POST /auth/login` (failures only) | 5 failures | 15 minutes | per email AND per IP (either triggers) |
-| `POST /auth/password` (wrong old password) | 5 failures | 15 minutes | per user ID |
+| `POST /auth/login` | 5 attempts | 15 minutes | per email and IP together, AND per IP (either triggers) |
+| `POST /auth/password` | 5 attempts | 15 minutes | per user ID |
 | `GET /invites/{invite_code}` and `POST /invites/{invite_code}/join` | 30 together | 1 minute | per client IP |
+| `POST /files` | 30 attempts | 1 minute | per user ID |
 
-A success on `/auth/login` does not count against the limit.
+Every attempt is counted before the password is checked, so parallel guesses all count. A success on
+`/auth/login` clears the email-and-IP counter and takes back its own hit on the IP counter; a success on
+`/auth/password` clears its counter.
 
 ## Secrets and keys
 
@@ -75,6 +78,6 @@ chatty-core/keys/
 
 ## ⚠️ Known gaps
 
-- **Access tokens cannot be revoked before expiry.** Logout revokes the refresh token, but any access token issued to that device remains valid for up to 15 minutes. This is standard for short-lived JWTs; a token blocklist is the mitigation when that window matters.
+- **Access tokens cannot be revoked before expiry.** Logout deletes the refresh token, but any access token issued to that device remains valid for up to 15 minutes. This is standard for short-lived JWTs; a token blocklist is the mitigation when that window matters.
 - **No 2FA / MFA.**
 - **Tokens are not bound to IP or device.** A stolen access token can be used from any IP until it expires.

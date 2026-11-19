@@ -9,7 +9,7 @@ Owned by chatty-core. Nobody else reads or writes it. All IDs are UUIDs (D-01).
 | Table | One row is | Worth knowing |
 |---|---|---|
 | `users` | An account | `email` is stored lowercased and is unique. Users are deactivated (`is_active = false`), never deleted. `is_staff` opens Django admin |
-| `authn_refresh_tokens` | One logged-in device | Only the SHA-256 hash of the token is stored, never the token. `revoked_at` is set on logout, rotation and password change. `purge_refresh_tokens` deletes old ones |
+| `authn_refresh_tokens` | One logged-in device | Only the SHA-256 hash of the token is stored, never the token. `revoked_at` is set only by rotation, so a rotated token stays as the proof of a later reuse. Logout, password change, reuse and deactivation delete rows. `purge_refresh_tokens` deletes tokens that expired more than 30 days ago |
 | `teams` | A team | Deleting sets `deleted_at` (soft delete); a deleted team answers `404` everywhere |
 | `team_members` | A user in a team | `role`: `owner`, `admin` or `member`. One row per user per team. `invite` records which link they joined with |
 | `invites` | An invite link | `code` is 8 characters and unique. `max_uses = 0` is unlimited, `expires_at = null` never expires. Revoking sets `revoked_at` |
@@ -42,10 +42,11 @@ skipped (fail open).
 | Key | Counts | Limit |
 |---|---|---|
 | `register:{ip}` | Registrations from one IP | 10 per hour |
-| `login_fail:{email}` | Failed logins for one email | 5 per 15 minutes |
-| `login_fail:{ip}` | Failed logins from one IP | 5 per 15 minutes |
-| `change_pw_fail:{user_id}` | Wrong old passwords on password change | 5 per 15 minutes |
+| `login_fail:{email}:{ip}` | Logins for one email from one IP; cleared on success | 5 per 15 minutes |
+| `login_fail:{ip}` | Logins from one IP; a success takes its own hit back | 5 per 15 minutes |
+| `change_pw_fail:{user_id}` | Password changes of one user; cleared on success | 5 per 15 minutes |
 | `invite_lookup:{ip}` | Invite lookups and joins from one IP | 30 per minute |
+| `files_upload:{user_id}` | Started uploads (`POST /files`) of one user | 30 per minute |
 
 `{ip}` is the client's real IP behind Nginx (D-09).
 

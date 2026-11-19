@@ -45,7 +45,7 @@ Details: [auth and security](../../architecture/auth-and-security.md).
 | DMs | Open a DM with 1 to 7 team members; the same group of people always gets the same DM | `api-core.md` |
 | My channel settings | Notification level, muted, hidden (`PUT channels/{channel_id}/me`) | `api-core.md` |
 | Users (admin) | Deactivate users from Django admin. Users are never deleted | `users/admin.py` |
-| Cleanup | `python manage.py purge_refresh_tokens` deletes old expired or revoked refresh tokens | `authn/management/commands/` |
+| Cleanup | `python manage.py purge_refresh_tokens` deletes refresh tokens that expired more than 30 days ago | `authn/management/commands/` |
 
 **Who can do what in a channel** (rules in `channels/access.py`):
 
