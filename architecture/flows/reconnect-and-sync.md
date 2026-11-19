@@ -40,12 +40,23 @@ sequenceDiagram
 **Open a channel** (`GET /channels/{channel_id}/messages`)
 
 1. The user must be able to read the channel: a member, or anyone in the team for a public channel.
-2. In one read transaction chatty-chat reads the channel's `last_seq` **first**, then up to `limit`
-   messages (1 to 100, default 50), newest first, with `seq < before_seq` when scrolling up. Reading
-   `last_seq` first means a message saved in between comes in this page and again from sync (dropped by
-   `seq`), instead of being missed by both.
-3. Deleted messages are included, empty, so the order doesn't jump. One extra row tells `has_more`.
-4. The web app sets `last_seen = last_seq` for the channel.
+2. In one `REPEATABLE READ` transaction, so every read sees the same moment, chatty-chat reads the
+   channel's `last_seq` **first**, then up to `limit` messages (1 to 100, default 50), newest first.
+   Reading `last_seq` first means a message saved in between comes in this page and again from sync
+   (dropped by `seq`), instead of being missed by both. The snapshot also keeps a reaction saved meanwhile
+   from being counted in the page and again by its event.
+3. Which messages, at most one of:
+
+   | Parameter | Page | Used for |
+   |---|---|---|
+   | none | the newest | Opening the channel |
+   | `before_seq` | `seq < before_seq` | Scrolling up |
+   | `after_seq` | `seq > after_seq`, `has_more_after` tells if there are newer ones | Scrolling down after a jump |
+   | `around_seq` | half older, half from `around_seq` on; it needn't be a message's own `seq` | Jumping to a message from search or a pin |
+
+4. Deleted messages are included, empty, so the order doesn't jump. One extra row on each side tells
+   `has_more` and `has_more_after`.
+5. The web app sets `last_seen = last_seq` for the channel.
 
 **A live event arrives** (the client rules, events.md)
 
@@ -82,7 +93,7 @@ sequenceDiagram
 |---|---|
 | History or events of a channel I can't read | `403 cannot_read_channel` |
 | The channel doesn't exist | `404 channel_not_found` |
-| `limit` or `after_seq` out of range | `400 validation_error` |
+| `limit` or a `seq` out of range, or more than one of `before_seq`, `after_seq`, `around_seq` | `400 validation_error` |
 | Events already cleaned up | `GET …/events`: `409 gap_too_large`; `POST /sync`: `gap_too_large: true` |
 | `POST /sync` with more than 500 channels or a negative `seq` | `400 validation_error` |
 | A channel in `POST /sync` I can't read any more | That channel's `error`; the others are answered |

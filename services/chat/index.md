@@ -1,13 +1,14 @@
 # chatty-chat
 
-FastAPI: messages and their files, reactions, pins, presence, the WebSocket gateway, sync. Later search.
+FastAPI: messages and their files, reactions, pins, presence, search, read state, push notifications, the
+WebSocket gateway, sync.
 
 ## At a glance
 
 | | |
 |---|---|
 | Stack | Python 3.14, FastAPI, SQLAlchemy 2.1 (async, asyncpg), Alembic, `redis.asyncio`, uvicorn |
-| Public API | `/api/chat/v1`, contract in [api-chat.md](https://github.com/Chatty4/chatty-infra/blob/dev/docs/api-chat.md): messages, attachment download links, reactions, pins, history, sync, channel events, presence, read state and unread counts, push subscriptions, the WebSocket `GET /api/chat/v1/ws` |
+| Public API | `/api/chat/v1`, contract in [api-chat.md](https://github.com/Chatty4/chatty-infra/blob/dev/docs/api-chat.md): messages, attachment download links, reactions, pins, history, sync, channel events, presence, read state and unread counts, search, push subscriptions, the WebSocket `GET /api/chat/v1/ws` |
 | Events | Channel events in [events.md](https://github.com/Chatty4/chatty-infra/blob/dev/docs/events.md); chatty-core's events in [core-events.md](https://github.com/Chatty4/chatty-infra/blob/dev/docs/core-events.md) |
 | Health | `GET /health`: the database, Redis and the two background tasks. The relay and the push worker have no health check |
 | Processes | The API (`app.main:app`), the outbox relay (`python -m app.jobs.relay`) and the push worker (`python -m app.jobs.push_worker`), each in its own container from the same image |
@@ -20,7 +21,7 @@ How the live parts work together: [live events](../../architecture/realtime.md).
 
 | Caller | Calls | Status |
 |---|---|---|
-| chatty-web (the browser) | REST: send, edit, delete, reactions, pins, history, `POST /sync`, channel events, presence, `POST /channels/{id}/read`, `GET /unread` | works |
+| chatty-web (the browser) | REST: send, edit, delete, reactions, pins, history, `POST /sync`, channel events, presence, `POST /channels/{id}/read`, `GET /unread`, `GET /search` | works |
 | chatty-web (the browser) | the WebSocket, `/api/chat/v1/ws?token=<JWT>` | works |
 | chatty-web (the browser) | `POST` / `DELETE /push/subscriptions` | works |
 | Any client | `GET /messages/{id}/attachments`: download links for a message's files | works; the web app doesn't call it yet ([CHAT-214](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-214)) |
@@ -68,7 +69,8 @@ The socket is accepted first and closed after, so the browser sees our close cod
 | Reactions | `PUT` / `DELETE /messages/{id}/reactions/{emoji}`: add or remove my emoji. A real change takes the next `seq` and publishes `reaction.added` / `reaction.removed`; the same add twice, or removing one I don't have, is `200` with no event. Both answer the message's reactions with `count` and `me` | [react to a message](../../architecture/flows/react-to-a-message.md) |
 | Pins | `POST` / `DELETE /channels/{id}/pins/{message_id}` and `GET /channels/{id}/pins`. A pin takes the next `seq` and publishes `pin.added`; pinning again is `200` with the existing pin and no event. Max 100 per channel (`409 pin_limit_reached`), checked under the counter lock so two pins can't both pass at 99. Unpinning one that isn't pinned is `204` with no event. The list is newest first, with full message objects | [pin a message](../../architecture/flows/pin-a-message.md) |
 | Presence | A user is online while they have an open WebSocket, in every team they're in. Redis keeps one line per socket, so the first socket sends `online` and the last sends `offline`, across processes. `GET /teams/{team_id}/presence` gives a new tab the current list | [see who is online](../../architecture/flows/see-who-is-online.md) |
-| History | `GET /channels/{id}/messages`: newest first, by `before_seq`, with the channel's `last_seq`, each message's reactions and `pinned` (one query each for the page). Deleted messages stay, empty | [reconnect and sync](../../architecture/flows/reconnect-and-sync.md) |
+| History | `GET /channels/{id}/messages`: newest first, with the channel's `last_seq`, each message's reactions, `pinned` and files (one query each for the page). `before_seq` pages back, `after_seq` pages forward (`has_more_after`), and `around_seq` centers a page on one message, to jump to it. All in one `REPEATABLE READ` snapshot. Deleted messages stay, empty | [reconnect and sync](../../architecture/flows/reconnect-and-sync.md) |
+| Search | `GET /search?team_id=…&q=…`: Postgres full-text search (`english`) over the messages of every channel of the team I can read, optionally `in` one channel, `from` one author, `before` / `after` a time. Best match first, then newest, with an opaque cursor tied to the filters. Each result is the message object and a `highlight` with `<mark>` around the matched words, HTML-escaped. Deleted messages and mentions' IDs are never matched | |
 | Sync | `POST /sync` for many channels and `GET /channels/{id}/events` for one: the events after a `seq`, or `gap_too_large`. Channels the cache doesn't know are checked against chatty-core 20 at a time | [reconnect and sync](../../architecture/flows/reconnect-and-sync.md) |
 | Typing | A `typing` message on the WebSocket, at most every 3 s per socket and channel, goes to the channel's other sockets through `chat.typing:{channel_id}`. Never stored, no `seq` | [live events](../../architecture/realtime.md#someone-is-typing) |
 | WebSocket gateway | One Redis pub/sub connection per process, one subscription per channel with a local socket. Forwards channel events, typing and presence, follows membership changes, closes deactivated users, heartbeat and watch | [connect the WebSocket](../../architecture/flows/websocket.md), [live events](../../architecture/realtime.md) |
@@ -113,6 +115,7 @@ Full list: [known limitations](../../architecture/known-limitations.md#messages-
 | `app/api/routers/pins.py` | Pin, unpin, list pins |
 | `app/api/routers/presence.py` | `GET /teams/{team_id}/presence` |
 | `app/api/routers/sync.py` | `POST /sync`, `GET /channels/{id}/events` |
+| `app/api/routers/search.py`, `app/services/search_service.py` | `GET /search`: readable channels, the cursor, the highlight |
 | `app/api/routers/ws.py` | The WebSocket: token check, client messages, typing checks, deadlines, close codes |
 | `app/services/message_service.py` | `MessageService`: send with attach and detach, edit, delete, history, attachment links, publish after commit |
 | `app/services/reaction_service.py` | `ReactionService`: add and remove a reaction |
