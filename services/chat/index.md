@@ -1,16 +1,16 @@
 # chatty-chat
 
-FastAPI: messages, reactions, pins, presence, the WebSocket gateway, sync. Later files and search.
+FastAPI: messages and their files, reactions, pins, presence, the WebSocket gateway, sync. Later search.
 
 ## At a glance
 
 | | |
 |---|---|
 | Stack | Python 3.14, FastAPI, SQLAlchemy 2.1 (async, asyncpg), Alembic, `redis.asyncio`, uvicorn |
-| Public API | `/api/chat/v1`, contract in [api-chat.md](https://github.com/Chatty4/chatty-infra/blob/dev/docs/api-chat.md): messages, reactions, pins, history, sync, channel events, presence, read state and unread counts, the WebSocket `GET /api/chat/v1/ws` |
+| Public API | `/api/chat/v1`, contract in [api-chat.md](https://github.com/Chatty4/chatty-infra/blob/dev/docs/api-chat.md): messages, attachment download links, reactions, pins, history, sync, channel events, presence, read state and unread counts, the WebSocket `GET /api/chat/v1/ws` |
 | Events | Channel events in [events.md](https://github.com/Chatty4/chatty-infra/blob/dev/docs/events.md); chatty-core's events in [core-events.md](https://github.com/Chatty4/chatty-infra/blob/dev/docs/core-events.md) |
 | Health | `GET /health`: the database, Redis and the two background tasks |
-| Stores | Postgres `chat_db` (messages, reactions, pins, channel events, seq counters, read state), Redis (cache, presence, `core.events`, `chat.events:*`, `chat.typing:*`, `chat.presence:*`, `chat.users:*`). See the [data map](../../architecture/data-map.md) |
+| Stores | Postgres `chat_db` (messages, attachments, reactions, pins, channel events, seq counters, read state), Redis (cache, presence, `core.events`, `chat.events:*`, `chat.typing:*`, `chat.presence:*`, `chat.users:*`). See the [data map](../../architecture/data-map.md) |
 | Local address | <http://127.0.0.1:8001> |
 
 How the live parts work together: [live events](../../architecture/realtime.md).
@@ -21,7 +21,7 @@ How the live parts work together: [live events](../../architecture/realtime.md).
 |---|---|---|
 | chatty-web (the browser) | REST: send, edit, delete, reactions, pins, history, `POST /sync`, channel events, presence, `POST /channels/{id}/read`, `GET /unread` | works |
 | chatty-web (the browser) | the WebSocket, `/api/chat/v1/ws?token=<JWT>` | works |
-| chatty-web (the browser) | REST: attachments, search | **planned** ([CHAT-212](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-212)) |
+| Any client | `GET /messages/{id}/attachments`: download links for a message's files | works; the web app doesn't call it yet ([CHAT-214](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-214)) |
 | chatty-core | `core.events` on Redis | works |
 
 And what it calls:
@@ -29,7 +29,8 @@ And what it calls:
 | Calls | What for | Status |
 |---|---|---|
 | chatty-core `/internal`, `X-Service-Token`, 2 s timeout | A user's memberships (D-07) and one channel with its members, cached in Redis | works |
-| chatty-core `/internal` file attach and detach | Files on messages (D-03) | **planned** ([CHAT-212](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-212)) |
+| chatty-core `/internal` file attach and detach | Files on messages (D-03), never cached | works |
+| Nothing (signing only) | MinIO download links for attachments, with chatty-chat's own read-only key (D-02, D-16). Signing makes no network call | works |
 
 ## How it checks callers
 
@@ -57,8 +58,9 @@ The socket is accepted first and closed after, so the browser sees our close cod
 
 | Area | What it does | Flow |
 |---|---|---|
-| Send | One transaction: the channel's next `seq` (a locked counter row), the message, a `channel_events` row, the sender's read position. Publishes `message.created` after the commit. A retry with the same `client_msg_id` returns the original with `200` | [send a message](../../architecture/flows/send-message.md) |
-| Edit, delete | Edit the body (author only) or soft-delete (D-05). Both take the next `seq` and publish `message.edited` / `message.deleted`. A delete also clears the text in the message's earlier events and deletes its reactions and pin | [edit and delete](../../architecture/flows/edit-and-delete-message.md) |
+| Send | Up to 10 files are attached in chatty-core first (D-03). Then one transaction: the channel's next `seq` (a locked counter row), the message, its attachments, a `channel_events` row, the sender's read position. Publishes `message.created` after the commit. A retry with the same `client_msg_id` returns the original with `200`. Files of a failed send are detached | [send a message](../../architecture/flows/send-message.md) |
+| Attachments | `GET /messages/{id}/attachments`: download links for all the files of a message, in the order sent, signed by chatty-chat itself, valid 5 minutes (D-02) | [send a message](../../architecture/flows/send-message.md) |
+| Edit, delete | Edit the body (author only) or soft-delete (D-05). Both take the next `seq` and publish `message.edited` / `message.deleted`. A delete also clears the text in the message's earlier events, deletes its reactions and pin, and detaches its files after the commit | [edit and delete](../../architecture/flows/edit-and-delete-message.md) |
 | Reactions | `PUT` / `DELETE /messages/{id}/reactions/{emoji}`: add or remove my emoji. A real change takes the next `seq` and publishes `reaction.added` / `reaction.removed`; the same add twice, or removing one I don't have, is `200` with no event. Both answer the message's reactions with `count` and `me` | [react to a message](../../architecture/flows/react-to-a-message.md) |
 | Pins | `POST` / `DELETE /channels/{id}/pins/{message_id}` and `GET /channels/{id}/pins`. A pin takes the next `seq` and publishes `pin.added`; pinning again is `200` with the existing pin and no event. Max 100 per channel (`409 pin_limit_reached`), checked under the counter lock so two pins can't both pass at 99. Unpinning one that isn't pinned is `204` with no event. The list is newest first, with full message objects | [pin a message](../../architecture/flows/pin-a-message.md) |
 | Presence | A user is online while they have an open WebSocket, in every team they're in. Redis keeps one line per socket, so the first socket sends `online` and the last sends `offline`, across processes. `GET /teams/{team_id}/presence` gives a new tab the current list | [see who is online](../../architecture/flows/see-who-is-online.md) |
@@ -84,7 +86,7 @@ Each health check gives up after 2 seconds. Code: `app/services/health_service.p
 
 ## ⚠️ Known gaps
 
-- No files yet ([CHAT-212](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-212)).
+- The web app can't attach or download files yet ([CHAT-214](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-214)).
 - A crash sends no `offline`, so open tabs can show a user as online for too long.
 - Events go over Redis pub/sub only: the outbox relay to Kafka doesn't run yet.
 - Watch uses the memberships loaded at connect ([CHAT-231](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-231)).
@@ -96,13 +98,13 @@ Full list: [known limitations](../../architecture/known-limitations.md#messages-
 | File | What is there |
 |---|---|
 | `app/main.py` | `create_app()`, and the lifespan: database, both Redis clients, the chatty-core client, the gateway and the `core.events` listener |
-| `app/api/routers/messages.py` | Send, history, edit, delete |
+| `app/api/routers/messages.py` | Send, history, edit, delete, attachment links |
 | `app/api/routers/reactions.py` | `PUT` and `DELETE …/reactions/{emoji}` |
 | `app/api/routers/pins.py` | Pin, unpin, list pins |
 | `app/api/routers/presence.py` | `GET /teams/{team_id}/presence` |
 | `app/api/routers/sync.py` | `POST /sync`, `GET /channels/{id}/events` |
 | `app/api/routers/ws.py` | The WebSocket: token check, client messages, typing checks, deadlines, close codes |
-| `app/services/message_service.py` | `MessageService`: send, edit, delete, history, publish after commit |
+| `app/services/message_service.py` | `MessageService`: send with attach and detach, edit, delete, history, attachment links, publish after commit |
 | `app/services/reaction_service.py` | `ReactionService`: add and remove a reaction |
 | `app/services/pin_service.py` | `PinService`: pin, unpin, list, the 100-pin limit |
 | `app/services/presence_service.py` | `PresenceService`: the team check, who is online |
@@ -113,7 +115,8 @@ Full list: [known limitations](../../architecture/known-limitations.md#messages-
 | `app/services/access_service.py` | `AccessService`: the user, team, read, write and delete checks |
 | `app/services/health_service.py` | `HealthService`: the database, Redis and background task checks |
 | `app/repositories/` | Messages, reactions, pins, channel events, the seq counter, read state |
-| `app/clients/core.py` | `CoreClient`: chatty-core's `/internal` API with the versioned Redis cache |
+| `app/clients/core.py` | `CoreClient`: chatty-core's `/internal` API with the versioned Redis cache, attach and detach |
+| `app/clients/storage.py` | `presign_attachment`: the download links, signed for the public MinIO address |
 | `app/clients/presence.py` | `PresenceStore`: who is online, in Redis |
 | `app/clients/core_events.py` | The `core.events` listener and cache clearing |
 | `app/core/security.py` | `decode_access_token`: the RS256 check |

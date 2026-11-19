@@ -36,11 +36,14 @@ sequenceDiagram
         H->>DB: BEGIN, next seq
         H->>DB: UPDATE message: body "", mentions [], deleted_at (only if not deleted yet)
         H->>DB: Clear body and mentions in its earlier created / edited events
-        H->>DB: DELETE its reactions
+        H->>DB: DELETE its reactions and pin
         H->>DB: INSERT channel_events message.deleted
         H->>DB: COMMIT
         H->>R: PUBLISH chat.events:{channel_id} message.deleted
         H-->>W: 204
+        opt the message had files
+            H->>C: POST /internal/files/detach (3 tries)
+        end
     end
 ```
 
@@ -48,7 +51,7 @@ sequenceDiagram
 
 **Edit** (`PUT /messages/{message_id}`)
 
-1. `body` is 1 to 4000 characters.
+1. `body` is at most 4000 characters. It can be empty only if the message has files.
 2. The message must exist and its channel must be readable, else `404 message_not_found` (so nobody
    learns it exists).
 3. Someone else's message: `403 not_author`. Deleted: `409 message_deleted`.
@@ -79,6 +82,10 @@ sequenceDiagram
      drop it from the pin list (CHAT-204).
    - The `message.deleted` event row.
 5. After the commit `message.deleted` is published; `204`.
+6. If the message had files, chatty-chat then calls chatty-core's `POST /internal/files/detach` (D-03),
+   up to three times (after 0.2 s and 0.4 s). chatty-core marks them deleted and its cleanup removes them
+   from MinIO. The delete answers `204` even if this fails. A deleted message shows no files, even while
+   its `attachments` rows are still there.
 
 **Why the conditional `UPDATE`?** It locks the row and checks "not deleted yet" in one statement, so an
 edit and a delete at the same moment can't both win. Both take the counter row first and the message row
@@ -91,7 +98,7 @@ after it.
 
 | Step | What happens |
 |---|---|
-| Body empty or over 4000 characters (edit) | `400 validation_error` |
+| Body over 4000 characters, or empty on a message without files (edit) | `400 validation_error` |
 | No message, or a channel I can't read | `404 message_not_found` |
 | Edit someone else's message | `403 not_author` |
 | Edit after I left the channel | `403 not_a_member` |
@@ -104,7 +111,8 @@ after it.
 
 - **A team admin who isn't in a private channel can't delete there.** They can't read the channel, so they
   get `404`, although D-05 lets admins delete any message. To confirm with the PO.
-- **Files aren't detached on delete yet** ([CHAT-212](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-212)).
+- **A detach that fails three times leaves the files attached to no message.** It is logged; nothing
+  retries it later.
 - **Deleted text that was already sent stays sent.** Clearing the earlier events only covers what is
   stored; a tab that got `message.created` over the WebSocket before the delete still has the text until
   it applies `message.deleted`.
@@ -115,6 +123,7 @@ after it.
 |---|---|
 | `chatty-chat/app/services/message_service.py` | `MessageService.edit`, `delete`, `get_readable_message` |
 | `chatty-chat/app/services/access_service.py` | `get_channel_for_delete`, `_can_delete_others` (D-05) |
+| `chatty-chat/app/clients/core.py` | `CoreClient.detach` |
 | `chatty-chat/app/repositories/messages.py` | `update_message_body`, `soft_delete_message`: the conditional updates |
 | `chatty-chat/app/repositories/channel_events.py` | `clear_message_text`: empties the deleted text in earlier events |
 | `chatty-chat/app/repositories/reactions.py` | `delete_message_reactions` |
