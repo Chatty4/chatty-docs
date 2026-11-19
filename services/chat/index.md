@@ -21,10 +21,9 @@ How the live parts work together: [live events](../../architecture/realtime.md).
 
 | Caller | Calls | Status |
 |---|---|---|
-| chatty-web (the browser) | REST: send, edit, delete, reactions, pins, history, `POST /sync`, channel events, presence, `POST /channels/{id}/read`, `GET /unread`, `GET /search` | works |
+| chatty-web (the browser) | REST: send (with files), edit, delete, reactions, pins, history, `POST /sync`, channel events, presence, `POST /channels/{id}/read`, `GET /unread`, `GET /search`, `GET /messages/{id}/attachments` | works |
 | chatty-web (the browser) | the WebSocket, `/api/chat/v1/ws?token=<JWT>` | works |
 | chatty-web (the browser) | `POST` / `DELETE /push/subscriptions` | works |
-| Any client | `GET /messages/{id}/attachments`: download links for a message's files | works; the web app doesn't call it yet ([CHAT-214](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-214)) |
 | chatty-core | `core.events` on Redis | works |
 
 And what it calls:
@@ -96,7 +95,6 @@ Each health check gives up after 2 seconds. Code: `app/services/health_service.p
 
 ## ⚠️ Known gaps
 
-- The web app can't attach or download files yet ([CHAT-214](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-214)).
 - A crash sends no `offline`, so open tabs can show a user as online for too long.
 - The gateways get events from Redis pub/sub, not Kafka; Kafka only feeds the push worker.
 - A deactivated user still gets push notifications.

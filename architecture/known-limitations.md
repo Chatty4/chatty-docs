@@ -45,12 +45,16 @@ What is not right yet, grouped by theme.
 
 ## Web
 
-- **Tokens are in `localStorage`.** The tabs need to share them, but any script running on the page can read them, and the Nginx config sets no `script-src` Content Security Policy.
+- **Tokens are in `localStorage`.** The tabs need to share them, but any script running on the page can read them. The Docker image's Content Security Policy only allows the app's own scripts, which blocks injected ones, but the Vite dev server sets no policy.
 - **A typing letter right after a message can show up to about 3 s late.** The server's 3 s limit still counts from the last `typing`, so the web app waits for it.
 - **Each token renewal closes the socket before opening the next.** Together with the presence flicker above, a user with one tab can show as offline and online about every 14 minutes.
 - **The sidebar doesn't hear about new channels and DMs directly.** No event says I was added, so the sidebar reloads when a message arrives for a channel it doesn't list, after a reconnect, or when the team changes. A channel I'm added to stays hidden until one of these.
 - **Channels that aren't open only update their badge.** Their messages load from history when opened.
-- **The Attach file button does nothing yet, and files on messages aren't shown** ([CHAT-214](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-214)).
+- **The DM order costs one request per DM.** chatty-core's sidebar list has no message times, so the web app asks chatty-chat for each DM's newest message (`limit=1`) on every sidebar load. A batch endpoint in chatty-chat is the fix if teams get many DMs.
+- **The GIPHY key is public, and searches go to GIPHY.** The GIF picker calls GIPHY from the browser, so the key is in the bundle, anyone can use up its rate limit, and GIPHY sees what people search for and their IP.
+- **A GIF is only a link to chatty-chat.** It is sent as a message whose body is its GIPHY link, so any other client, and chatty-chat's own search, sees the URL. If GIPHY removes the GIF, the message shows GIPHY's "not available" image.
+- **A changed avatar or team icon shows after a reload.** Each image is downloaded once per tab, and nothing tells other people's tabs that it changed.
+- **A removed upload waits for the cleanup.** A file taken out of the composer after it was uploaded isn't deleted; `clean_up_files` removes it after 24 hours.
 - **The connection status isn't shown.** A dropped socket looks like a quiet channel.
 - **Drafts and failed messages are in memory**, so a reload loses them.
 
