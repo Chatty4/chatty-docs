@@ -76,6 +76,9 @@ service sees them.
    `400 upload_mismatch`.
 5. Otherwise `pending` becomes `ready`, only if it is still `pending` and not deleted. If another confirm
    of this file won meanwhile, the answer is what it left. The upload is then deleted.
+6. The upload URL still works until it expires, so the client can `PUT` to `uploads/{file_id}` again
+   after confirm. That changes nothing: the file is already at its final key, and nothing reads
+   `uploads/`. The leftover object goes with the lifecycle rule below.
 
 **4. Use it**
 
@@ -108,6 +111,12 @@ team I'm in, valid 5 minutes. Attachments are downloaded through chatty-chat ins
 2. Files marked deleted, up to 500 per run, lose both MinIO objects in one call, then their rows. If
    MinIO fails, the rows stay and the next run tries again.
 
+**The `uploads/` rule** (MinIO, not chatty-core). `setup.bat` gives the bucket a lifecycle rule
+(`chatty-infra/minio/lifecycle.json`, D-14): every object in `uploads/` is deleted a day after it was
+written. MinIO's background scanner applies it, so it can happen a little later. It is the safety net for
+what chatty-core doesn't delete itself: a `PUT` after confirm, or an upload whose delete failed. It can't
+hit an upload that is still needed, because confirm refuses anything after the URL's 10 minutes.
+
 **Detach** (`POST /internal/files/detach`): when a message is deleted, or a send fails after attach,
 chatty-chat asks chatty-core to mark its files deleted; the cleanup removes them.
 
@@ -132,6 +141,9 @@ chatty-chat asks chatty-core to mark its files deleted; the cleanup removes them
 
 - **The web app has no upload yet.** The Attach file button does nothing
   ([CHAT-214](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-214)).
+- **The `uploads/` rule is set up outside the code.** Only `setup.bat` and `reset-db.bat` create it, and
+  nothing in chatty-core checks it is there. Another environment without it keeps every object written to
+  an upload URL after confirm.
 - **An attachment's declared type isn't checked against its bytes**, only that it isn't a program.
   Downloads are always `Content-Disposition: attachment`, so the browser saves it instead of showing it.
 

@@ -56,3 +56,4 @@ What is not right yet, grouped by theme.
 ## Infra
 
 - **No HTTPS in the dev stack.** All traffic between the browser, Nginx, and the service containers is plain HTTP. TLS termination is expected to happen outside this stack in any non-dev environment, but where is not decided yet. Until then chatty-core sends no HSTS header, sets no `SECURE_SSL_REDIRECT` / `SECURE_PROXY_SSL_HEADER`, and CI doesn't run `manage.py check --deploy`.
+- **The MinIO setup is only in `setup.bat`.** The bucket, the two service users and the rule that deletes `uploads/` after a day are created by `setup.bat` and `reset-db.bat`. Any other environment has to create them the same way; without the rule, objects written to an upload URL after confirm stay forever ([upload a file](flows/upload-a-file.md)).
