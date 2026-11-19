@@ -15,6 +15,7 @@ Owned by chatty-core. Nobody else reads or writes it. All IDs are UUIDs (D-01).
 | `invites` | An invite link | `code` is 8 characters and unique. `max_uses = 0` is unlimited, `expires_at = null` never expires. Revoking sets `revoked_at` |
 | `channels` | A channel or a DM | `kind`: `public`, `private` or `dm`. Names are unique per team (not for DMs). `is_default` channels are joined on invite. A DM has `dm_key`, the sorted member IDs, unique per team, so the same people always get the same DM. Archiving sets `archived_at` |
 | `channel_members` | A user in a channel | `role`: `owner` or `member`. My settings live here: `notify_level` (`all`, `mentions`, `none`), `muted`, `hidden` |
+| `files` | An avatar, a team icon or an attachment | `purpose`: `avatar` (no team), `team_icon` or `attachment` (a team), enforced by a check constraint. `status`: `pending` until confirm checks the upload, then `ready`. `object_key` is the final MinIO key. `attached_at` is set when a message holds it. Deleting sets `deleted_at`; the hourly cleanup removes the objects, then the row (D-17). `users.avatar` and `teams.icon` point here |
 
 ## chat_db (Postgres)
 
@@ -90,7 +91,19 @@ subscribes (at start and after Redis comes back) it bumps `version:all` and dele
 
 ## MinIO
 
-Runs in the dev stack, not used yet. **Planned:** avatars, team icons and message attachments (D-02, D-03).
+One bucket (`MINIO_BUCKET`, `chatty` locally), split by prefix (D-14). The browser never sends a file
+through a service: it uploads and downloads with presigned URLs, signed for the address it reaches (D-16).
+
+| Prefix | Holds | Written by |
+|---|---|---|
+| `uploads/{file_id}` | What the browser uploaded, until confirm copies it (D-15) | The browser, with the `PUT` URL from `POST /files`. A lifecycle rule (`minio/lifecycle.json` in chatty-infra) deletes these after a day |
+| `avatars/{user_id}/{file_id}` | Avatars | chatty-core, on confirm |
+| `team-icons/{team_id}/{file_id}` | Team icons | chatty-core, on confirm |
+| `attachments/{team_id}/{file_id}` | Files on messages | chatty-core, on confirm |
+
+Each service has its own MinIO user. chatty-core's can read, write and delete the whole bucket;
+chatty-chat's can only read `attachments/*`, to sign download links (D-02). The policies are in
+`chatty-infra/minio/`. More: [upload a file](flows/upload-a-file.md).
 
 ## Kafka
 

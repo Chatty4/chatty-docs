@@ -11,7 +11,7 @@ Django: users, auth, teams, channels, files.
 | Internal API | `/internal` for chatty-chat, contract in [api-internal.md](https://github.com/Chatty4/chatty-infra/blob/dev/docs/api-internal.md) |
 | Events | Publishes `core.events` on Redis, contract in [core-events.md](https://github.com/Chatty4/chatty-infra/blob/dev/docs/core-events.md) |
 | Health | `GET /health` |
-| Stores | Postgres `core_db`, Redis (rate limits, `core.events`). See the [data map](../../architecture/data-map.md) |
+| Stores | Postgres `core_db`, Redis (rate limits, `core.events`), MinIO (avatars, team icons, attachments). See the [data map](../../architecture/data-map.md) |
 | Local address | <http://127.0.0.1:8000> |
 
 ## Who talks to it
@@ -20,7 +20,8 @@ Django: users, auth, teams, channels, files.
 |---|---|---|
 | chatty-web (the browser) | `/api/core/v1` | works |
 | Platform admins | `/admin/` (Django admin) | works |
-| chatty-chat | `/internal`: a user's memberships, one channel with its members | works |
+| chatty-chat | `/internal`: a user's memberships, one channel with its members, attach and detach a message's files | works |
+| The browser, directly | MinIO, with the presigned URLs chatty-core signs: `PUT` an upload, `GET` an avatar or team icon | works |
 | chatty-chat | listens to `core.events` on Redis | works |
 
 ## How it checks callers
@@ -38,14 +39,16 @@ Details: [auth and security](../../architecture/auth-and-security.md).
 
 | Area | What it does | Contract |
 |---|---|---|
-| Auth and profile | Register, login, refresh, logout, change password; `GET` / `PUT /me` with my teams | `api-core.md` |
-| Teams | Create (with a `general` channel), rename, delete; directory and roles; remove members; leave (the last active owner can't) | `api-core.md` |
+| Auth and profile | Register, login, refresh, logout, change password; `GET` / `PUT /me` with my teams and my avatar | `api-core.md` |
+| Teams | Create (with a `general` channel), rename, set the icon, delete; directory and roles; remove members; leave (the last active owner can't) | `api-core.md` |
 | Invites | Create, list and revoke invite links; open one and join the team and its default channels | `api-core.md` |
 | Channels | Create, browse, rename, archive; join, leave, add and remove members | `api-core.md` |
 | DMs | Open a DM with 1 to 7 team members; the same group of people always gets the same DM | `api-core.md` |
 | My channel settings | Notification level, muted, hidden (`PUT channels/{channel_id}/me`) | `api-core.md` |
+| Files | Upload in three steps (D-15): `POST /files` gives a presigned `PUT` URL for `uploads/{file_id}`, the browser uploads straight to MinIO, `POST /files/{file_id}/confirm` copies it to its final key and checks it. `GET /files/{file_id}` redirects to an avatar or team icon; `DELETE` deletes my own file that is in no message | `api-core.md`, [upload a file](../../architecture/flows/upload-a-file.md) |
+| Attach and detach (internal) | `POST /internal/files/attach` marks all the files of a message attached, or none (D-03); `POST /internal/files/detach` deletes the files of a message that was deleted or never saved | `api-internal.md` |
 | Users (admin) | Deactivate users from Django admin. Users are never deleted | `users/admin.py` |
-| Cleanup | `python manage.py purge_refresh_tokens` deletes refresh tokens that expired more than 30 days ago | `authn/management/commands/` |
+| Cleanup | `python manage.py purge_refresh_tokens` deletes refresh tokens that expired more than 30 days ago (daily). `python manage.py clean_up_files` marks unused files deleted and removes deleted files from MinIO and the database (hourly, D-17) | `authn/management/commands/`, `files/management/commands/` |
 
 **Who can do what in a channel** (rules in `channels/access.py`):
 
@@ -70,6 +73,7 @@ refresh tokens. See the flow [teams and invites](../../architecture/flows/teams-
 |---|---|---|
 | Postgres | Every API call fails with `500` | `503`, `"db": "error"` |
 | Redis | Everything keeps working, but rate limits are skipped (fail open) and `core.events` are not sent (logged; chatty-chat's cache expires within 5 minutes) | `503`, `"redis": "error"` |
+| MinIO | Confirm, delete and the file cleanup fail; signing URLs makes no network call, so `POST /files` and downloads still answer. The cleanup keeps the rows and tries again the next hour | not checked |
 | chatty-chat | Nothing in chatty-core breaks | not checked |
 
 Each health check gives up after 2 seconds. Code: `config/views.py`.
@@ -94,7 +98,11 @@ Full list: [known limitations](../../architecture/known-limitations.md#teams-and
 | `channels/services.py` | `ChannelService`: `require_access`, join, leave, members, rename, archive |
 | `channels/repositories/` | Channel and member queries, the channel-row lock for leave and remove |
 | `teams/services/` | `TeamService` (`teams.py`): teams, members, roles, owner hand-off. `InviteService` (`invites.py`): invites and join |
-| `users/internal/`, `channels/internal/` | The `/internal` endpoints for chatty-chat |
+| `files/services.py` | `FileService`: create an upload, confirm, download, delete, attach, detach, the hourly cleanup |
+| `files/checks.py` | What confirm reads from the bytes: the real image type, and programs (D-18) |
+| `files/access.py` | Which file can be an avatar or a team icon |
+| `users/internal/`, `channels/internal/`, `files/internal/` | The `/internal` endpoints for chatty-chat |
+| `shared/storage.py` | MinIO: presigned `PUT` and `GET` URLs, head, read, copy, delete |
 | `shared/events.py` | `publish`: sends one event on `core.events` after the change commits |
 | `shared/redis.py` | `rate_limit`: Redis counters that fail open |
 | `shared/pagination.py` | Cursor pagination used by every list |

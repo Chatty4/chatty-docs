@@ -21,10 +21,9 @@ A flow follows one user journey across services. Each page has a picture first, 
 | [See who is online](see-who-is-online.md) | How does a user stay online with tabs on two processes, and what does a new tab see? | web, chat, Redis |
 | [Open a channel, reconnect and sync](reconnect-and-sync.md) | How does a tab catch up after a gap or a lost connection? | web, chat |
 | [A change in chatty-core reaches chatty-chat](core-events.md) | How do removed users lose access at once, in the cache and on open sockets? | core, Redis, chat |
+| [Upload a file](upload-a-file.md) | How does a file reach MinIO without passing through a service, and when is it cleaned up? | web, core, MinIO, chat |
 
 How the live parts fit together (sockets, Redis pub/sub, gateways, the cache): [live events](../realtime.md).
-
-Planned, once the feature exists: file upload.
 
 ## How to read a flow page
 

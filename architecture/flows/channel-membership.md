@@ -40,6 +40,7 @@ sequenceDiagram
 
 1. chatty-core checks that the channel exists, that I'm in its team, that it's public and that it isn't archived.
 2. It adds me as a `member` with `notify_level: mentions`. If I'm already in the channel, it returns my existing membership with `200`, so joining twice is safe. Two joins at the same moment still create one row (`get_or_create`).
+3. The add runs under a lock on the team row, after checking again that I'm in the team. A removal from the team at the same moment then runs before or after it, never between, so a removed user can't be left with a channel row. Adding members (`POST /channels/{channel_id}/members`) does the same.
 
 **Leave** (`POST /channels/{channel_id}/leave`)
 
