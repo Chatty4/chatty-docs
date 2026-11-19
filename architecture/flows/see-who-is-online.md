@@ -63,7 +63,9 @@ sequenceDiagram
 **Heartbeat**
 
 Every 20 s the socket's line gets the current time and the key's TTL starts again. Nothing is sent. A hidden
-tab counts as online: `visible` doesn't change presence.
+tab counts as online: `visible` doesn't change presence. It only adds the socket to `visible:{user_id}`, or
+takes it out, for the push worker ([get a push notification](get-a-push-notification.md)). Closing the socket
+takes it out too.
 
 **Close**
 

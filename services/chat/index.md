@@ -101,7 +101,7 @@ Each health check gives up after 2 seconds. Code: `app/services/health_service.p
 - The gateways get events from Redis pub/sub, not Kafka; Kafka only feeds the push worker.
 - A deactivated user still gets push notifications.
 - No rate limits: `429` and `4008 too_many_messages` are in the contract but never sent.
-- Watch uses the memberships loaded at connect ([CHAT-231](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-231)).
+- A socket can miss a channel removal that happens while it connects ([CHAT-271](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-271)).
 
 Full list: [known limitations](../../architecture/known-limitations.md#messages-and-live-events).
 

@@ -14,7 +14,7 @@ What is not right yet, grouped by theme.
 ## Teams and channels
 
 - **Deleting a team doesn't stop live events right away.** chatty-core sends only `team.deleted`, with no `membership.changed removed` for each channel, and chatty-chat doesn't unsubscribe open WebSockets from the team's channels for it yet. Members keep receiving those channels' events until they reconnect or their access token expires (up to 15 minutes). Removal from a channel, leaving or being removed from a team (CHAT-263) and deactivation are immediate ([CHAT-185](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-185)).
-- **A user removed from a team can still watch its public channels until they reconnect.** chatty-chat checks a WebSocket `watch` against the memberships it loaded when the socket connected, so after leaving or being removed from a team, the user can start a new watch on that team's public channels and receive their live events until they reconnect or their access token expires (up to 15 minutes). A watch that is already running ends right away ([CHAT-231](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-231)).
+- **Opening a DM and creating a channel don't take the team lock.** Join and add members check team membership again under a lock on the team row; `open_dm` and channel create check it before, without the lock. A removal from the team at the same moment can leave the removed user in a DM or owning a new channel of that team. chatty-chat only checks the channel's members, so they could keep reading and writing that DM.
 - **No unarchive.** An archived channel stays read-only; there is no endpoint to undo it.
 
 ## Chat
