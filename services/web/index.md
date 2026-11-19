@@ -1,7 +1,7 @@
 # chatty-web
 
 React app in the browser: login, teams, channels, DMs, invites, messages, reactions, pins, unread badges,
-presence dots and the typing indicator. Later files.
+presence dots, the typing indicator, search and push notifications. Later files.
 
 ## At a glance
 
@@ -10,9 +10,10 @@ presence dots and the typing indicator. Later files.
 | Stack | Vite, React 19, TypeScript, React Router, Tailwind CSS 4, shadcn/ui (Base UI), Vitest |
 | Calls | chatty-core `/api/core/v1`, chatty-chat `/api/chat/v1` and its WebSocket |
 | Served by | The Vite dev server locally, Nginx in the Docker image. Both forward the API paths, so the browser only talks to its own origin and no CORS is needed |
-| Stores | `localStorage`: the tokens, the session ID, the last used team, the theme. Everything else lives in memory, per tab |
+| Stores | `localStorage`: the tokens, the session ID, the last used team, the theme. The browser keeps the push subscription and the service worker (`/sw.js`). Everything else lives in memory, per tab |
 | Local address | <http://localhost:5173> (`npm run dev`) |
-| Checks | `npm run lint`, `npm run typecheck`, `npm run build`, `npm test` |
+| Checks | `npm run lint`, `npm run typecheck`, `npm test`, `npm run build`, all four in CI (Node 24) |
+| Settings | `VITE_VAPID_PUBLIC_KEY` for push notifications; empty turns them off. `VITE_` variables are built into the app, so never secrets |
 
 The whole journey, from opening the app to logging out: [from login to logout](../../architecture/flows/from-login-to-logout.md).
 
@@ -48,11 +49,14 @@ hides what they would refuse.
 | Session | Both tokens in `localStorage`, shared by the tabs. A Web Lock makes sure only one tab rotates the refresh token, and `BroadcastChannel` tells the others about logins and logouts. The access token is refreshed a minute before it expires, and once more on a `401` | [refresh and logout](../../architecture/flows/refresh-and-logout.md) |
 | API client | Adds the token, turns the contract's error body into an `ApiError`, and repeats a request once after a refresh | |
 | App shell | Team rail, sidebar and main area. `/` opens the last used team, a team opens its default channel, and someone with no team gets a welcome page to create or join one | [from login to logout](../../architecture/flows/from-login-to-logout.md) |
-| Teams, channels, DMs, invites, profile | The screens for chatty-core's API: create, settings, members, browse, invite links, hide a DM | [teams and invites](../../architecture/flows/teams-and-invites.md), [join, leave and owner hand-off](../../architecture/flows/channel-membership.md) |
+| Teams, channels, DMs, invites, profile | The screens for chatty-core's API: create, settings, members, browse, invite links, hide a DM. The sidebar reloads after every reconnect, and when an event or `unread` arrives for a channel it doesn't list (someone added me, or a new DM). Renames and archives follow `channel.updated` | [teams and invites](../../architecture/flows/teams-and-invites.md), [join, leave and owner hand-off](../../architecture/flows/channel-membership.md) |
 | WebSocket | One socket per tab, opened when the app shell mounts. Heartbeat every 20 s and when the tab is shown or hidden, reconnect with backoff, `POST /sync` after every open, a new socket a minute before the token expires | [connect the WebSocket](../../architecture/flows/websocket.md) |
 | Message store | One state per loaded channel, ordered by `seq`. Applies events by the rules in `events.md`: drops duplicates, applies the next one, fills gaps with `GET …/events`, reloads on `gap_too_large` | [open a channel, reconnect and sync](../../architecture/flows/reconnect-and-sync.md) |
 | Sending | Optimistic: the message shows at once as pending, then as sent or failed with the reason. A retry reuses the `client_msg_id`, and a failed message can be dismissed | [send a message](../../architecture/flows/send-message.md) |
-| Messages | Markdown, mentions with autocomplete, emoji, edit, delete, drafts per channel, older messages on scroll, jump to a message | [edit and delete](../../architecture/flows/edit-and-delete-message.md) |
+| Messages | Markdown, mentions with autocomplete, emoji, edit, delete, drafts per channel, older messages on scroll. Jumping to a message loads a page around it (`around_seq`), and newer pages follow on scroll (`after_seq`) | [edit and delete](../../architecture/flows/edit-and-delete-message.md), [open a channel](../../architecture/flows/reconnect-and-sync.md) |
+| Watch | A public channel the user opens without joining it is watched on the socket, again after every reconnect, so its new messages arrive live | [connect the WebSocket](../../architecture/flows/websocket.md) |
+| Search | A panel in the channel header (`?search`): `GET /search` in the active team, with filters for a channel, a person and a date range. Results show the highlighted text, my own messages marked, and open the message in its channel | |
+| Push notifications | Settings, Notifications: turn on asks for permission, registers `/sw.js` and saves the subscription in chatty-chat; turn off and log out remove it. The service worker shows "New message" or "You were mentioned" and opens the channel on click | [get a push notification](../../architecture/flows/get-a-push-notification.md) |
 | Reactions, pins | Chips with counts, an emoji picker, a pin mark and a pins panel. Reaction counts change from events only, so a reaction isn't counted twice | [react](../../architecture/flows/react-to-a-message.md), [pin](../../architecture/flows/pin-a-message.md) |
 | Unread | Badges in the sidebar from `GET /unread`, on load, on a team switch and after every reconnect. New messages add to them, and `unread` messages keep my other tabs in step. A channel is marked read while its newest message is on screen | |
 | Presence | Who is online in the active team, from `GET /teams/{team_id}/presence` and then the `presence` messages. Shows a green dot on message avatars and on DMs in the sidebar | [see who is online](../../architecture/flows/see-who-is-online.md) |
@@ -75,9 +79,9 @@ the whole app), then `WsProvider`, `MessagesProvider`, `TeamsProvider`, `Channel
 
 ## ⚠️ Known gaps
 
-- The sidebar doesn't follow new channels and DMs: it reloads when the team changes.
-- The web app never sends `watch`.
-- The Attach file button does nothing yet ([CHAT-214](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-214)).
+- Being added to a channel shows in the sidebar only once a message arrives in it, after a reconnect or
+  after a team change.
+- The Attach file button does nothing yet, and files on messages aren't shown ([CHAT-214](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-214)).
 - The connection status isn't shown, so a dropped socket looks like a quiet channel.
 - Drafts and failed messages are in memory, so a reload loses them.
 
@@ -106,4 +110,9 @@ Full list: [known limitations](../../architecture/known-limitations.md#web).
 | `src/features/typing/store/typing.ts` | Who is typing per channel, the send limit and the label, tested without a browser |
 | `src/features/typing/hooks/use-send-typing.ts` | Sends `typing`, and holds a change that comes too soon |
 | `src/features/typing/ui/` | The provider, the row after the last message and the dots |
+| `src/features/messages/hooks/use-watch-channel.ts` | `watch` and `unwatch` for a channel I haven't joined |
+| `src/features/messages/utils/jump-to-message.ts` | Scroll to a message, loading it with `around_seq` first |
+| `src/features/search/` | The search panel, the filters and the highlight |
+| `src/features/push/` | Push: permission, subscribe, save, turn off, the settings section |
+| `public/sw.js` | The service worker that shows push notifications |
 | `nginx/default.conf.template` | The proxy, headers and the single-page fallback |

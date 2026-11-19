@@ -47,13 +47,11 @@ What is not right yet, grouped by theme.
 - **Tokens are in `localStorage`.** The tabs need to share them, but any script running on the page can read them, and the Nginx config sets no `script-src` Content Security Policy.
 - **A typing letter right after a message can show up to about 3 s late.** The server's 3 s limit still counts from the last `typing`, so the web app waits for it.
 - **Each token renewal closes the socket before opening the next.** Together with the presence flicker above, a user with one tab can show as offline and online about every 14 minutes.
-- **The sidebar doesn't follow new channels and DMs.** Being added to one shows only after the team changes or the page reloads.
+- **The sidebar doesn't hear about new channels and DMs directly.** No event says I was added, so the sidebar reloads when a message arrives for a channel it doesn't list, after a reconnect, or when the team changes. A channel I'm added to stays hidden until one of these.
 - **Channels that aren't open only update their badge.** Their messages load from history when opened.
-- **The web app never sends `watch`.**
-- **The Attach file button does nothing yet** ([CHAT-214](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-214)).
+- **The Attach file button does nothing yet, and files on messages aren't shown** ([CHAT-214](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-214)).
 - **The connection status isn't shown.** A dropped socket looks like a quiet channel.
 - **Drafts and failed messages are in memory**, so a reload loses them.
-- **CI doesn't run the tests.** `.github/workflows/ci.yml` runs lint, typecheck and build but not `npm test`, and uses Node 22 while the README and the Docker image use Node 24.
 
 ## Infra
 

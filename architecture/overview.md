@@ -6,9 +6,9 @@ The big picture: every service, how they talk, and auth in 30 seconds.
 
 | Service | What it owns | Stack | Status |
 |---|---|---|---|
-| chatty-web | The app in the browser | React (Vite) | login, teams, channels, DMs, invites, messages, reactions, pins, unread, presence and typing work; files not yet |
-| chatty-core | Users, auth, teams, invites, channels, DMs, files | Django | works, except files |
-| chatty-chat | Messages, the live WebSocket, sync, reactions, pins, presence, typing, search | FastAPI | messages, reactions, pins, presence, typing, history, sync and the WebSocket gateway work; files and search not yet |
+| chatty-web | The app in the browser | React (Vite) | login, teams, channels, DMs, invites, messages, reactions, pins, unread, presence, typing, search and push notifications work; files not yet |
+| chatty-core | Users, auth, teams, invites, channels, DMs, files | Django | works |
+| chatty-chat | Messages and their files, the live WebSocket, sync, reactions, pins, presence, typing, search, push notifications | FastAPI | works |
 | chatty-infra | Docker Compose, contracts, setup scripts | | works |
 
 Each backend service has its own Postgres database. They never read each other's database; they talk
@@ -26,19 +26,22 @@ flowchart LR
     C --> R[(Redis)]
     H --> HDB[(chat_db)]
     H -->|cache, chat.events:* pub/sub| R
-    H -.-> K[(Kafka)]
-    C -.-> M[(MinIO)]
-    H -.-> M
+    HDB -->|outbox relay| K[(Kafka)]
+    K -->|push worker| P[Browser push services]
+    C -->|copy, check, delete| M[(MinIO)]
+    B -->|presigned PUT and GET| M
 ```
 
-Solid lines work today; dashed lines are planned.
+The browser uploads and downloads files straight from MinIO with links the services sign; chatty-chat
+signs attachment links with its own read-only key and never calls MinIO.
 
 ## How the services talk
 
 | From → to | How | What for | Status |
 |---|---|---|---|
-| web → core | HTTPS JSON, `/api/core/v1` | Accounts, teams, channels | works |
-| web → chat | HTTPS JSON and a WebSocket, `/api/chat/v1` | Messages, history, sync, live events | works |
+| web → core | HTTPS JSON, `/api/core/v1` | Accounts, teams, channels, starting and confirming uploads | works |
+| web → chat | HTTPS JSON and a WebSocket, `/api/chat/v1` | Messages, history, sync, search, push subscriptions, live events | works |
+| web → MinIO | Presigned `PUT` and `GET` URLs (D-15, D-16) | Uploads, avatars, team icons, attachment downloads | works in the API; the web app doesn't upload yet ([upload a file](flows/upload-a-file.md)) |
 | chat → core | HTTP, `/internal`, `X-Service-Token` | Who is in which channel (D-07), file attach and detach (D-03) | works |
 | core → chat | Redis pub/sub `core.events` | "Something changed": clear the cache, update open WebSockets (D-06, D-08) | works ([core events](flows/core-events.md)) |
 | chat → chat | Redis pub/sub `chat.events:{channel_id}` | A saved change reaches the gateways with sockets in the channel | works ([live events](realtime.md)) |
