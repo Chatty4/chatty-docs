@@ -120,6 +120,14 @@ hit an upload that is still needed, because confirm refuses anything after the U
 **Detach** (`POST /internal/files/detach`): when a message is deleted, or a send fails after attach,
 chatty-chat asks chatty-core to mark its files deleted; the cleanup removes them.
 
+**In the web app.** The composer (📎, Ctrl+V or drag and drop) checks the size and type first, then runs
+the three steps for each file at once. The `PUT` uses `XMLHttpRequest`, because `fetch` can't report upload
+progress. The browser sets `Content-Length` itself, so only `Content-Type` is copied from
+`upload_headers`. Send waits until every file is `ready`, then sends their `file_ids` with the message.
+Account settings and team settings use the same three steps for the avatar and the team icon, then save it
+with `PUT /me` or `PUT /teams/{team_id}`. Avatars and icons are shown from `GET /files/{file_id}`, which
+needs the token: the app follows the redirect with `fetch` and shows the image as a `blob:` URL.
+
 ## If a step fails
 
 | Step | What happens |
@@ -139,8 +147,8 @@ chatty-chat asks chatty-core to mark its files deleted; the cleanup removes them
 
 ## ⚠️ Known gaps
 
-- **The web app has no upload yet.** The Attach file button does nothing
-  ([CHAT-214](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-214)).
+- **A file removed from the composer after its upload isn't deleted.** The web app leaves it to
+  `clean_up_files`, which removes it after 24 hours.
 - **The `uploads/` rule is set up outside the code.** Only `setup.bat` and `reset-db.bat` create it, and
   nothing in chatty-core checks it is there. Another environment without it keeps every object written to
   an upload URL after confirm.
@@ -158,4 +166,5 @@ chatty-chat asks chatty-core to mark its files deleted; the cleanup removes them
 | `chatty-core/files/repositories.py` | The row locks and the one rule for unused files (`_unused_qs`) |
 | `chatty-core/shared/storage.py` | Presigned URLs, head, copy, read, delete |
 | `chatty-core/files/management/commands/clean_up_files.py` | The hourly job |
+| `chatty-web/src/features/files/` | The upload with progress, the checks before it, the composer's uploads, avatar and icon images |
 | `chatty-chat/app/clients/core.py` | `CoreClient.attach`, `detach` |

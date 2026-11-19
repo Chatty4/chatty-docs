@@ -1,7 +1,8 @@
 # chatty-web
 
-React app in the browser: login, teams, channels, DMs, invites, messages, reactions, pins, unread badges,
-presence dots, the typing indicator, search and push notifications. Later files.
+React app in the browser: login, teams, channels, DMs, invites, messages with files and GIFs, reactions,
+pins, unread badges, presence dots, the typing indicator, search, push notifications, avatars and team
+icons.
 
 ## At a glance
 
@@ -13,7 +14,7 @@ presence dots, the typing indicator, search and push notifications. Later files.
 | Stores | `localStorage`: the tokens, the session ID, the last used team, the theme. The browser keeps the push subscription and the service worker (`/sw.js`). Everything else lives in memory, per tab |
 | Local address | <http://localhost:5173> (`npm run dev`) |
 | Checks | `npm run lint`, `npm run typecheck`, `npm test`, `npm run build`, all four in CI (Node 24) |
-| Settings | `VITE_VAPID_PUBLIC_KEY` for push notifications; empty turns them off. `VITE_` variables are built into the app, so never secrets |
+| Settings | `VITE_VAPID_PUBLIC_KEY` for push notifications and `VITE_GIPHY_API_KEY` for the GIF picker; empty turns each off. `VITE_` variables are built into the app, so never secrets. Docker: `MINIO_PUBLIC_URL` (chatty-core's) for the CSP |
 
 The whole journey, from opening the app to logging out: [from login to logout](../../architecture/flows/from-login-to-logout.md).
 
@@ -27,6 +28,16 @@ The browser opens the app and everything goes through one origin:
 | `/api/chat/...`, also the WebSocket | chatty-chat | `CHAT_API_TARGET` | `CHAT_API_UPSTREAM` |
 | `/health/core`, `/health/chat` | The backend's `/health`, for the `/status` page | same | same |
 | Anything else | The app: Nginx answers `index.html`, and React Router picks the page | | |
+
+Two things don't go through the proxy:
+
+- **MinIO, through presigned URLs** (D-16): uploads go straight to it with the `PUT` URL from `POST /files`,
+  and attachment images and downloads come from the URLs of `GET /messages/{id}/attachments`. Avatars and
+  team icons come from `GET /files/{id}`, which redirects to MinIO; the app downloads them with the token
+  and shows them as `blob:` URLs.
+- **GIPHY** (`api.giphy.com` and its media hosts), for the GIF picker.
+
+The Docker image's Content Security Policy allows exactly these besides its own origin and jsDelivr.
 
 Nginx also sets `X-Real-IP` for the rate limits (D-09) and keeps the WebSocket open for up to an hour without
 traffic. A backend that isn't running answers `502`; Nginx itself still starts.
@@ -49,11 +60,15 @@ hides what they would refuse.
 | Session | Both tokens in `localStorage`, shared by the tabs. A Web Lock makes sure only one tab rotates the refresh token, and `BroadcastChannel` tells the others about logins and logouts. The access token is refreshed a minute before it expires, and once more on a `401` | [refresh and logout](../../architecture/flows/refresh-and-logout.md) |
 | API client | Adds the token, turns the contract's error body into an `ApiError`, and repeats a request once after a refresh | |
 | App shell | Team rail, sidebar and main area. `/` opens the last used team, a team opens its default channel, and someone with no team gets a welcome page to create or join one | [from login to logout](../../architecture/flows/from-login-to-logout.md) |
-| Teams, channels, DMs, invites, profile | The screens for chatty-core's API: create, settings, members, browse, invite links, hide a DM. The sidebar reloads after every reconnect, and when an event or `unread` arrives for a channel it doesn't list (someone added me, or a new DM). Renames and archives follow `channel.updated` | [teams and invites](../../architecture/flows/teams-and-invites.md), [join, leave and owner hand-off](../../architecture/flows/channel-membership.md) |
+| Teams, channels, DMs, invites, profile | The screens for chatty-core's API: create, settings, members, browse, invite links. The sidebar reloads after every reconnect, and when an event or `unread` arrives for a channel it doesn't list (someone added me, or a new DM). Renames and archives follow `channel.updated` | [teams and invites](../../architecture/flows/teams-and-invites.md), [join, leave and owner hand-off](../../architecture/flows/channel-membership.md) |
+| DMs in the sidebar | Ordered by their newest message: one `GET /channels/{id}/messages?limit=1` per DM after the sidebar loads, then every `message.created`, mine too. The ✕ on a DM hides it (`PUT /channels/{id}/me`, `hidden: true`) after marking it read. A hidden DM with unread messages comes back and is un-hidden in chatty-core, so my other devices show it too (D-04) | |
+| Avatars, team icons | Account settings uploads my avatar (`PUT /me`), team settings the team icon (`PUT /teams/{id}`, owners and admins). Avatars show on messages, pins, member lists and the user menu; the icon on the team rail, the sidebar and the invite page. Each image is downloaded once per tab | [upload a file](../../architecture/flows/upload-a-file.md) |
 | WebSocket | One socket per tab, opened when the app shell mounts. Heartbeat every 20 s and when the tab is shown or hidden, reconnect with backoff, `POST /sync` after every open, a new socket a minute before the token expires | [connect the WebSocket](../../architecture/flows/websocket.md) |
 | Message store | One state per loaded channel, ordered by `seq`. Applies events by the rules in `events.md`: drops duplicates, applies the next one, fills gaps with `GET …/events`, reloads on `gap_too_large` | [open a channel, reconnect and sync](../../architecture/flows/reconnect-and-sync.md) |
-| Sending | Optimistic: the message shows at once as pending, then as sent or failed with the reason. A retry reuses the `client_msg_id`, and a failed message can be dismissed | [send a message](../../architecture/flows/send-message.md) |
-| Messages | Markdown, mentions with autocomplete, emoji, edit, delete, drafts per channel, older messages on scroll. Jumping to a message loads a page around it (`around_seq`), and newer pages follow on scroll (`after_seq`) | [edit and delete](../../architecture/flows/edit-and-delete-message.md), [open a channel](../../architecture/flows/reconnect-and-sync.md) |
+| Sending | Optimistic: the message shows at once as pending, then as sent or failed with the reason. A retry reuses the `client_msg_id` and its `file_ids`, and a failed message can be dismissed | [send a message](../../architecture/flows/send-message.md) |
+| Files | Attach with the 📎 button, Ctrl+V or drag and drop, up to 10 per message. Each file uploads at once (3 steps, with progress and an image thumbnail); Send waits until all are ready. Files show inside the message bubble: images as one grid that opens a full-screen preview (← →, Download), other files as cards that download. Pins show the first two and "+N" | [upload a file](../../architecture/flows/upload-a-file.md), [send a message](../../architecture/flows/send-message.md) |
+| GIFs | The GIF button searches GIPHY from the browser (trending first, more on scroll). A GIF is sent as a message whose whole body is its GIPHY link; the app shows such a message as the GIF, also in pins and search, and push says "Sent a GIF". chatty-chat sees plain text | |
+| Messages | Markdown, mentions with autocomplete, emoji, edit, delete, drafts per channel, older messages on scroll. Opening a conversation puts the cursor in the message box. Jumping to a message loads a page around it (`around_seq`), and newer pages follow on scroll (`after_seq`) | [edit and delete](../../architecture/flows/edit-and-delete-message.md), [open a channel](../../architecture/flows/reconnect-and-sync.md) |
 | Watch | A public channel the user opens without joining it is watched on the socket, again after every reconnect, so its new messages arrive live | [connect the WebSocket](../../architecture/flows/websocket.md) |
 | Search | A panel in the channel header (`?search`): `GET /search` in the active team, with filters for a channel, a person and a date range. Results show the highlighted text, my own messages marked, and open the message in its channel | [search messages](../../architecture/flows/search-messages.md) |
 | Push notifications | Settings, Notifications: turn on asks for permission, registers `/sw.js` and saves the subscription in chatty-chat; turn off and log out remove it. The service worker shows "New message" or "You were mentioned" and opens the channel on click | [get a push notification](../../architecture/flows/get-a-push-notification.md) |
@@ -81,7 +96,8 @@ the whole app), then `WsProvider`, `MessagesProvider`, `TeamsProvider`, `Channel
 
 - Being added to a channel shows in the sidebar only once a message arrives in it, after a reconnect or
   after a team change.
-- The Attach file button does nothing yet, and files on messages aren't shown ([CHAT-214](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-214)).
+- The DM order costs one request per DM on every sidebar load.
+- The GIPHY key is public (it's in the bundle), and searches go from the browser to GIPHY.
 - The connection status isn't shown, so a dropped socket looks like a quiet channel.
 - Drafts and failed messages are in memory, so a reload loses them.
 
@@ -113,6 +129,11 @@ Full list: [known limitations](../../architecture/known-limitations.md#web).
 | `src/features/messages/hooks/use-watch-channel.ts` | `watch` and `unwatch` for a channel I haven't joined |
 | `src/features/messages/utils/jump-to-message.ts` | Scroll to a message, loading it with `around_seq` first |
 | `src/features/search/` | The search panel, the filters and the highlight |
+| `src/features/files/` | The 3-step upload with progress, the checks before it, `useFileUploads`, `useFileImage` (avatars and icons), `ImageUploadRow` |
+| `src/features/messages/ui/message-attachments.tsx`, `image-grid.tsx`, `image-lightbox.tsx` | A message's files, the image grid and the preview |
+| `src/features/gifs/` | The GIPHY search, the picker and `isGifMessage` |
+| `src/features/channels/ui/channels-provider.tsx`, `utils/dm-order.ts` | The sidebar list, hidden DMs and the DM order |
+| `src/components/app/user-avatar.tsx` | An avatar image, or the initials |
 | `src/features/push/` | Push: permission, subscribe, save, turn off, the settings section |
 | `public/sw.js` | The service worker that shows push notifications |
 | `nginx/default.conf.template` | The proxy, headers and the single-page fallback |

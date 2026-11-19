@@ -89,7 +89,7 @@ sequenceDiagram
    browser. A push service that answers `404` or `410` means the browser unsubscribed: the row is deleted.
 
 **4. The browser.** `sw.js` shows "New message" or "You were mentioned" with the preview, mentions shown
-as `@you` or `@someone`, one notification per channel. A click opens the channel in a Chatty tab, or a
+as `@you` or `@someone` and a GIF's link as "Sent a GIF", one notification per channel. A click opens the channel in a Chatty tab, or a
 new one.
 
 ## If a step fails

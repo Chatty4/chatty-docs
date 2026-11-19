@@ -97,7 +97,8 @@ sequenceDiagram
 11. `TeamsProvider` calls `GET /teams`, and `/` opens the last used team, or the first one. Someone with no team
     gets a welcome page to create or join one.
 12. `ChannelsProvider` calls `GET /teams/{team_id}/channels` for the sidebar, and the team opens its default
-    channel.
+    channel. Hidden DMs stay out of the list unless they have unread messages, and the DMs are ordered by
+    their newest message once it is known.
 13. The message list calls `GET /channels/{channel_id}/messages`, with up to 50 messages, the channel's
     `last_seq`, reactions and `pinned`. Events that arrive meanwhile wait, and are applied after it.
 14. Scrolling up loads older messages with `before_seq`.

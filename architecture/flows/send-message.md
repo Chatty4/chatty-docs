@@ -97,6 +97,10 @@ to chatty-core and one call per message. The links say `Content-Disposition: att
 filename, so the browser saves the file instead of showing it. A deleted message, or one in a channel I
 can't read, is `404 message_not_found`.
 
+The web app calls it once for each message with files on screen. Images go straight into `<img>` (a link
+still downloads), as one grid that opens a full-screen preview; other files are cards. A URL less than a
+minute from expiring is fetched again before a click, and an image that fails to load gets one new URL.
+
 **Why lock the counter row?** Without it, two sends could read the same `last_seq` and both take `seq` 9.
 The upsert makes the second wait until the first commits, so 50 sends at once get exactly 1 to 50.
 
@@ -121,7 +125,6 @@ The upsert makes the second wait until the first commits, so 50 sends at once ge
 ## ⚠️ Known gaps
 
 - **No rate limit on sending.**
-- **The web app can't attach files yet** ([CHAT-214](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-214)).
 - **A detach that keeps failing leaves files attached to no message.** It is tried once after a failed
   send, three times after a delete, then logged.
 
