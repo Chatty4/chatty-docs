@@ -6,7 +6,7 @@ Docker Compose, contracts, setup scripts.
 
 | | |
 |---|---|
-| Runs | `docker-compose.yml`: core-db, chat-db, redis, minio, kafka, core, chat |
+| Runs | `docker-compose.yml`: core-db, chat-db, redis, minio, kafka, core, chat, relay, push-worker. `core` also runs the refresh-token purge (daily) and the file cleanup (hourly), `chat` the event cleanup (daily), as loops next to uvicorn |
 | Contracts | `docs/`: `api-core.md`, `api-chat.md`, `api-internal.md`, `core-events.md`, `events.md`, `decisions.md` |
 | Scripts | `setup.bat`, `start.bat`, `stop.bat`, `restart.bat`, `migrate.bat`, `logs.bat`, `status.bat`, `test.bat`, `shell.bat`, `reset-db.bat`; `chatty.bat` is a menu for all of them |
 | Postman | `postman/`: a collection with every HTTP endpoint of chatty-core (public and `/internal`) and chatty-chat, and a local environment. The WebSocket can't be stored in a collection: open it in Postman with New > WebSocket |
@@ -21,14 +21,17 @@ containers this repo starts.
 ## How it checks callers
 
 It doesn't. Every port is published on `127.0.0.1` only, for local development. `setup.bat` creates the
-shared secrets once: `CORE_SERVICE_TOKEN`, chatty-core's `SECRET_KEY`, and the JWT key pair in
-`chatty-core/keys/` (see [auth and security](../../architecture/auth-and-security.md#secrets-and-keys)).
+shared secrets once: `CORE_SERVICE_TOKEN`, chatty-core's `SECRET_KEY`, the JWT key pair in
+`chatty-core/keys/` (see [auth and security](../../architecture/auth-and-security.md#secrets-and-keys)),
+a MinIO user for each service, and the VAPID key pair for Web Push (the private half in chatty-chat's
+`.env`, the public half in chatty-web's).
 
 ## What it does
 
 | Area | What it does |
 |---|---|
-| First setup | `setup.bat` clones the other repos on `dev`, creates every `.env` with matching secrets, creates the JWT keys once, creates the VS Code workspace and can set up virtualenvs. Safe to run again |
+| First setup | `setup.bat` clones the other repos on `dev`, creates every `.env` with matching secrets, creates the JWT and VAPID keys once, creates the VS Code workspace and can set up virtualenvs. Safe to run again |
+| MinIO and Kafka | `setup.bat` creates the bucket `chatty`, its lifecycle rule (uploads expire after a day) and one user per service with the policies in `minio/`, and the Kafka topic `chat.events` (6 partitions, kept 7 days) |
 | Daily | Start, stop, restart and rebuild containers; follow logs; check health and branches |
 | Databases | Migrations for core and chat; `reset-db.bat` backs up to `backups\` before it wipes anything |
 | Tests | `test.bat` runs the same checks as CI (ruff, pytest) inside the containers |

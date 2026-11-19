@@ -23,8 +23,10 @@ What is not right yet, grouped by theme.
 
 ## Messages and live events
 
-- **Channel events aren't sent to Kafka yet.** `channel_events` is meant to be the outbox for Kafka, but the relay doesn't run: `published_at` stays null, and live events go over Redis pub/sub only. The nightly cleanup (CHAT-191) deletes by age only for now; once the relay runs, decide whether rows it never sent may be deleted.
-- **The cleanup runs from a loop in the container.** It runs once a day after the `chat` container starts, and the 24 h timer restarts with the container. Production needs a real scheduled job.
+- **The gateways don't read Kafka.** The outbox relay sends every channel event to Kafka, but the gateways still get them from Redis pub/sub, published by the API after the commit. Kafka only feeds the push worker for now.
+- **The relay doesn't notice it lost its lock.** If its control connection drops, the advisory lock and `LISTEN` are gone but the loop goes on, so a second relay can start next to it. The poll still sends events.
+- **A deactivated user still gets push notifications.** Deactivation keeps their channel memberships, and nothing deletes their push subscriptions, so their browsers keep getting previews.
+- **The cleanups run from loops in the containers.** `clean_up_events` runs once a day in `chat`, `purge_refresh_tokens` once a day and `clean_up_files` every hour in `core`, and each timer restarts with its container. Production needs real scheduled jobs.
 - **A live event is lost while Redis is down.** The message is saved and its event row is written, but nobody hears it live. Clients get it from `POST /sync`; when Redis is back the gateway closes every socket with `1001` so they reconnect and sync.
 - **One stuck socket delays its gateway's events.** The gateway sends to a channel's sockets together; a socket that stops reading holds up the next event for everyone on that process for up to 5 s, once, before it is dropped and closed with `1001 too_slow`. A queue per socket is the fix if the load test shows it ([CHAT-224](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-224)).
 - **Sync makes up to two queries per channel**, for up to 500 channels in one call ([CHAT-224](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-224)).

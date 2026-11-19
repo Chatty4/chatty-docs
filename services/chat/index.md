@@ -7,10 +7,11 @@ FastAPI: messages and their files, reactions, pins, presence, the WebSocket gate
 | | |
 |---|---|
 | Stack | Python 3.14, FastAPI, SQLAlchemy 2.1 (async, asyncpg), Alembic, `redis.asyncio`, uvicorn |
-| Public API | `/api/chat/v1`, contract in [api-chat.md](https://github.com/Chatty4/chatty-infra/blob/dev/docs/api-chat.md): messages, attachment download links, reactions, pins, history, sync, channel events, presence, read state and unread counts, the WebSocket `GET /api/chat/v1/ws` |
+| Public API | `/api/chat/v1`, contract in [api-chat.md](https://github.com/Chatty4/chatty-infra/blob/dev/docs/api-chat.md): messages, attachment download links, reactions, pins, history, sync, channel events, presence, read state and unread counts, push subscriptions, the WebSocket `GET /api/chat/v1/ws` |
 | Events | Channel events in [events.md](https://github.com/Chatty4/chatty-infra/blob/dev/docs/events.md); chatty-core's events in [core-events.md](https://github.com/Chatty4/chatty-infra/blob/dev/docs/core-events.md) |
-| Health | `GET /health`: the database, Redis and the two background tasks |
-| Stores | Postgres `chat_db` (messages, attachments, reactions, pins, channel events, seq counters, read state), Redis (cache, presence, `core.events`, `chat.events:*`, `chat.typing:*`, `chat.presence:*`, `chat.users:*`). See the [data map](../../architecture/data-map.md) |
+| Health | `GET /health`: the database, Redis and the two background tasks. The relay and the push worker have no health check |
+| Processes | The API (`app.main:app`), the outbox relay (`python -m app.jobs.relay`) and the push worker (`python -m app.jobs.push_worker`), each in its own container from the same image |
+| Stores | Postgres `chat_db` (messages, attachments, reactions, pins, channel events, seq counters, read state, push subscriptions), Redis (cache, presence, push dedupe, `core.events`, `chat.events:*`, `chat.typing:*`, `chat.presence:*`, `chat.users:*`), Kafka (`chat.events`). See the [data map](../../architecture/data-map.md) |
 | Local address | <http://127.0.0.1:8001> |
 
 How the live parts work together: [live events](../../architecture/realtime.md).
@@ -21,6 +22,7 @@ How the live parts work together: [live events](../../architecture/realtime.md).
 |---|---|---|
 | chatty-web (the browser) | REST: send, edit, delete, reactions, pins, history, `POST /sync`, channel events, presence, `POST /channels/{id}/read`, `GET /unread` | works |
 | chatty-web (the browser) | the WebSocket, `/api/chat/v1/ws?token=<JWT>` | works |
+| chatty-web (the browser) | `POST` / `DELETE /push/subscriptions` | works |
 | Any client | `GET /messages/{id}/attachments`: download links for a message's files | works; the web app doesn't call it yet ([CHAT-214](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-214)) |
 | chatty-core | `core.events` on Redis | works |
 
@@ -31,6 +33,8 @@ And what it calls:
 | chatty-core `/internal`, `X-Service-Token`, 2 s timeout | A user's memberships (D-07) and one channel with its members, cached in Redis | works |
 | chatty-core `/internal` file attach and detach | Files on messages (D-03), never cached | works |
 | Nothing (signing only) | MinIO download links for attachments, with chatty-chat's own read-only key (D-02, D-16). Signing makes no network call | works |
+| Kafka `chat.events` | The relay produces channel events, the push worker consumes them | works |
+| Browser push services (Google, Mozilla, Apple, Windows), 5 s timeout | Web Push from the push worker, signed with the VAPID private key | works |
 
 ## How it checks callers
 
@@ -68,7 +72,9 @@ The socket is accepted first and closed after, so the browser sees our close cod
 | Sync | `POST /sync` for many channels and `GET /channels/{id}/events` for one: the events after a `seq`, or `gap_too_large`. Channels the cache doesn't know are checked against chatty-core 20 at a time | [reconnect and sync](../../architecture/flows/reconnect-and-sync.md) |
 | Typing | A `typing` message on the WebSocket, at most every 3 s per socket and channel, goes to the channel's other sockets through `chat.typing:{channel_id}`. Never stored, no `seq` | [live events](../../architecture/realtime.md#someone-is-typing) |
 | WebSocket gateway | One Redis pub/sub connection per process, one subscription per channel with a local socket. Forwards channel events, typing and presence, follows membership changes, closes deactivated users, heartbeat and watch | [connect the WebSocket](../../architecture/flows/websocket.md), [live events](../../architecture/realtime.md) |
-| Event bus | `EventBus.publish(ChannelEvent)`: one `PUBLISH` on `chat.events:{channel_id}` per event, after the commit. Kafka replaces it later | [live events](../../architecture/realtime.md#from-a-saved-change-to-every-tab) |
+| Event bus | `EventBus.publish(ChannelEvent)`: one `PUBLISH` on `chat.events:{channel_id}` per event, after the commit, for the gateways | [live events](../../architecture/realtime.md#from-a-saved-change-to-every-tab) |
+| Outbox relay | `python -m app.jobs.relay`, its own container: sends the unpublished `channel_events` rows to the Kafka topic `chat.events` in order, keyed by `channel_id`, then marks them. Woken by `NOTIFY`, polls every 0.2 s, one at a time (advisory lock) | [get a push notification](../../architecture/flows/get-a-push-notification.md) |
+| Push | `POST` / `DELETE /push/subscriptions` save and forget this browser (D-13). `python -m app.jobs.push_worker`, its own container, reads `message.created` from Kafka and sends Web Push to members who want it and have no tab on screen | [get a push notification](../../architecture/flows/get-a-push-notification.md) |
 | chatty-core cache | `members:{user_id}` and `channel:{channel_id}` for 5 minutes. A write is refused if an event bumped the key's version meanwhile (CHAT-266) | [live events](../../architecture/realtime.md#the-cache-and-its-versions) |
 | Cleanup | `python -m app.jobs.clean_up_events` deletes `channel_events` older than 30 days, each channel's oldest first. Runs once a day from the `chat` container (CHAT-191). Clients that asked for deleted events get `gap_too_large` and reload the history | [reconnect and sync](../../architecture/flows/reconnect-and-sync.md) |
 | `core.events` | Marks the cache keys an event makes stale; the gateway updates open sockets. On every (re)subscribe the whole cache is cleared (D-08) | [core events](../../architecture/flows/core-events.md) |
@@ -81,6 +87,8 @@ The socket is accepted first and closed after, so the browser sees our close cod
 | Redis | The cache is skipped and every check asks chatty-core. Publishing is logged and skipped; clients catch up with `POST /sync`. When Redis is back, the gateway closes every socket with `1001` and the cache is cleared | `503`, `"redis": "error"` |
 | chatty-core | Access checks that aren't cached fail with `503 core_unavailable`. A WebSocket that connects meanwhile is closed with `1011` | not checked |
 | A background task (the gateway or the `core.events` listener) | It has stopped: open sockets or the cache are no longer kept right. The crash is logged | `503`, `"tasks": "error"` |
+| Kafka | The relay retries every second and the rows stay unpublished; push notifications wait. Messages and live events are unaffected | not checked |
+| MinIO | Nothing: download links are signed without a call; the browser gets the error when it follows one | not checked |
 
 Each health check gives up after 2 seconds. Code: `app/services/health_service.py`.
 
@@ -88,7 +96,9 @@ Each health check gives up after 2 seconds. Code: `app/services/health_service.p
 
 - The web app can't attach or download files yet ([CHAT-214](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-214)).
 - A crash sends no `offline`, so open tabs can show a user as online for too long.
-- Events go over Redis pub/sub only: the outbox relay to Kafka doesn't run yet.
+- The gateways get events from Redis pub/sub, not Kafka; Kafka only feeds the push worker.
+- A deactivated user still gets push notifications.
+- No rate limits: `429` and `4008 too_many_messages` are in the contract but never sent.
 - Watch uses the memberships loaded at connect ([CHAT-231](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-231)).
 
 Full list: [known limitations](../../architecture/known-limitations.md#messages-and-live-events).
@@ -117,6 +127,10 @@ Full list: [known limitations](../../architecture/known-limitations.md#messages-
 | `app/repositories/` | Messages, reactions, pins, channel events, the seq counter, read state |
 | `app/clients/core.py` | `CoreClient`: chatty-core's `/internal` API with the versioned Redis cache, attach and detach |
 | `app/clients/storage.py` | `presign_attachment`: the download links, signed for the public MinIO address |
-| `app/clients/presence.py` | `PresenceStore`: who is online, in Redis |
+| `app/clients/presence.py` | `PresenceStore`: who is online and whose tab is on screen, in Redis |
+| `app/api/routers/push.py`, `app/services/push_subscription_service.py` | Save and forget push subscriptions |
+| `app/jobs/relay.py`, `app/services/outbox_relay.py` | The outbox relay to Kafka |
+| `app/jobs/push_worker.py`, `app/services/push_service.py`, `app/clients/web_push.py` | The push worker: recipients, dedupe, Web Push |
+| `app/clients/kafka.py` | The Kafka producer and consumer |
 | `app/clients/core_events.py` | The `core.events` listener and cache clearing |
 | `app/core/security.py` | `decode_access_token`: the RS256 check |

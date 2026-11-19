@@ -426,8 +426,8 @@ refused. A script runs as one step in Redis, so nothing can come in between the 
 - **Presence has a few gaps of its own:** a crash sends no `offline`, a page refresh can flicker, and a close
   and a connect at the same moment can end in the wrong order. See
   [see who is online](flows/see-who-is-online.md).
-- **Kafka isn't used yet.** Events go over Redis pub/sub; the outbox (`channel_events.published_at`) has no
-  relay yet. See the [data map](data-map.md#kafka).
+- **The gateways don't read Kafka.** The outbox relay sends every channel event to Kafka, but only the push
+  worker reads it; the gateways get events from Redis pub/sub. See the [data map](data-map.md#kafka).
 
 Full list: [known limitations](known-limitations.md).
 

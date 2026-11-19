@@ -41,7 +41,8 @@ Solid lines work today; dashed lines are planned.
 | web → chat | HTTPS JSON and a WebSocket, `/api/chat/v1` | Messages, history, sync, live events | works |
 | chat → core | HTTP, `/internal`, `X-Service-Token` | Who is in which channel (D-07), file attach and detach (D-03) | works |
 | core → chat | Redis pub/sub `core.events` | "Something changed": clear the cache, update open WebSockets (D-06, D-08) | works ([core events](flows/core-events.md)) |
-| chat → chat | Redis pub/sub `chat.events:{channel_id}` | A saved change reaches the gateways with sockets in the channel | works ([live events](realtime.md)); Kafka **planned** |
+| chat → chat | Redis pub/sub `chat.events:{channel_id}` | A saved change reaches the gateways with sockets in the channel | works ([live events](realtime.md)) |
+| chat → Kafka → push worker | The outbox relay sends `channel_events` to the topic `chat.events` | New messages become Web Push for browsers with no tab on screen | works ([get a push notification](flows/get-a-push-notification.md)) |
 
 In production every browser request goes through chatty-web's Nginx (D-09). Locally the Vite dev server
 forwards the same paths to the services on `127.0.0.1`, so the browser only talks to its own origin.
