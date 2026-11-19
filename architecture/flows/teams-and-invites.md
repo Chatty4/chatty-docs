@@ -71,8 +71,8 @@ sequenceDiagram
 
 1. No token needed: the page is shown before login.
 2. Each IP may make 30 lookups or joins per minute, so nobody can guess codes by trying many.
-3. Returns the team name, member count and `valid`. If `valid` is `false`, `reason` says `expired`,
-   `revoked` or `used_up`.
+3. Returns the team name, member count, `icon_url` (a presigned link to the team icon, valid 5 minutes,
+   or `null`) and `valid`. If `valid` is `false`, `reason` says `expired`, `revoked` or `used_up`.
 
 **Join** (`POST /invites/{invite_code}/join`)
 
@@ -117,7 +117,6 @@ attachments of sent messages too, because a deleted team can't be restored (D-17
   `team.member.changed` and `membership.changed`, and chatty-chat updates its cache and open WebSockets
   right away ([core events](core-events.md)). Delete only publishes `team.deleted`, and open sockets stay
   subscribed to the team's channels; those are read-only, so no new events arrive.
-- **No team icon on the invite page.** `icon_url` is always `null` until file uploads exist.
 
 ## Key code
 

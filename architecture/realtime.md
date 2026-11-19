@@ -130,8 +130,8 @@ sequenceDiagram
 
 ## The ConnectionRegistry
 
-Everything here is in memory, for this process only. The sockets of each user are one map; channels and
-teams are each a `SocketGroups`, the same class created twice:
+Everything here is in memory, for this process only. Users, channels and teams are each a `SocketGroups`,
+the same class created three times:
 
 ```mermaid
 flowchart LR
@@ -154,8 +154,8 @@ flowchart LR
 `join()` returns `True` when a channel or team gets its **first** local socket, and `leave()` /
 `leave_all()` report when one loses its **last**. That is the signal to `SUBSCRIBE` or `UNSUBSCRIBE` in
 Redis. So a process subscribes to each channel and team once, whether 1 or 500 of its sockets are in it,
-and only to the ones its own users need. `add()` and `remove()` do the same for a user: the user's first
-local socket subscribes to `chat.users:{user_id}`, and the last one unsubscribes.
+and only to the ones its own users need. The same goes for a user: the user's first local socket
+subscribes to `chat.users:{user_id}`, and the last one unsubscribes.
 
 ## From a saved change to every tab
 
@@ -331,13 +331,18 @@ stateDiagram-v2
 - At most one watched channel per socket. If the user is already a member, nothing changes, so a later
   `unwatch` can't remove a membership.
 - A watch uses the same `join()` / `SUBSCRIBE` as a membership.
+- Each `watch` loads the user's memberships again (`AccessService.get_user_for_watch`), so a user who just
+  left a team can't start one on its channels. A public channel created after the cached list is looked up
+  in chatty-core and counts too.
+- The web app watches a public channel the user opens without joining it, and sends `watch` again after
+  every reconnect (`useWatchChannel`).
 
 ## Keeping the socket alive
 
 | Mechanism | Who | Catches |
 |---|---|---|
 | Ping/pong | uvicorn pings every 20 s; the browser answers on its own. No pong within 20 s closes the socket (`1011`) | A dead connection: a sleeping laptop, a dropped network |
-| Heartbeat | The web app sends `{"type": "heartbeat", "visible": …}` every 20 s. None for 60 s closes with `4002` | A frozen app; `visible` says if the tab is on screen |
+| Heartbeat | The web app sends `{"type": "heartbeat", "visible": …}` every 20 s. None for 60 s closes with `4002` | A frozen app; `visible` says if the tab is on screen, kept in `visible:{user_id}` for the push worker |
 | Token deadline | The same timer watches the token's `exp` and closes with `4001` | An expired token; the web app should refresh and reconnect about a minute earlier |
 
 Only a valid heartbeat resets the 60 s timer. Invalid JSON, unknown types and binary frames are ignored.
@@ -416,18 +421,15 @@ refused. A script runs as one step in Redis, so nothing can come in between the 
 
 ## ⚠️ Known gaps
 
-- **Watch uses the memberships loaded at connect.** Someone removed from a team can start a new watch on
-  its public channels until they reconnect ([CHAT-231](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-231)).
 - **One stuck socket delays its gateway's events** by up to 5 s once, before it is dropped. A queue per
   socket is the fix if the load test shows it ([CHAT-224](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-224)).
 - **A letter right after a message can show up to about 3 s late,** because the 3 s limit still counts from
   the last `typing`.
-- **The heartbeat's `visible` is stored but not used yet.**
 - **Presence has a few gaps of its own:** a crash sends no `offline`, a page refresh can flicker, and a close
   and a connect at the same moment can end in the wrong order. See
   [see who is online](flows/see-who-is-online.md).
-- **Kafka isn't used yet.** Events go over Redis pub/sub; the outbox (`channel_events.published_at`) has no
-  relay yet. See the [data map](data-map.md#kafka).
+- **The gateways don't read Kafka.** The outbox relay sends every channel event to Kafka, but only the push
+  worker reads it; the gateways get events from Redis pub/sub. See the [data map](data-map.md#kafka).
 
 Full list: [known limitations](known-limitations.md).
 

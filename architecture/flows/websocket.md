@@ -50,10 +50,16 @@ sequenceDiagram
    [live events](../realtime.md#connecting-a-socket). The user's first socket also makes them
    [online](see-who-is-online.md).
 4. **Heartbeat.** Every 20 s the web app sends `{"type": "heartbeat", "visible": …}`. Only a valid
-   heartbeat resets the 60 s timer, and it also refreshes the user's presence.
+   heartbeat resets the 60 s timer, and it also refreshes the user's presence. `visible: true` marks the
+   tab as on screen in `visible:{user_id}`, so the push worker sends that user nothing
+   ([get a push notification](get-a-push-notification.md)).
 5. **Watch.** `{"type": "watch", "channel_id": …}` follows one public channel of the user's teams that they
-   haven't joined; a new watch replaces the old one, `unwatch` ends it. Not public in my teams:
-   `{"type": "error", "code": "cannot_watch"}`, and the socket stays open.
+   haven't joined; a new watch replaces the old one, `unwatch` ends it. Each watch loads the user's
+   memberships again (the cache, or chatty-core), not the ones from connect, so someone who just left a
+   team can't watch its channels, and a public channel newer than the cache is looked up in chatty-core.
+   Not public in my teams, or chatty-core unreachable: `{"type": "error", "code": "cannot_watch"}`, and the
+   socket stays open. The web app watches a public channel the user opens without joining it, again after
+   every reconnect.
 6. **Typing.** `{"type": "typing", "channel_id": …}` tells the others in the channel, at most every 3 s. It is
    ignored without an error if the user can't write there, and it doesn't reset the 60 s timer. See
    [live events](../realtime.md#someone-is-typing).
@@ -77,12 +83,10 @@ sequenceDiagram
 
 ## ⚠️ Known gaps
 
-- **The heartbeat's `visible` is stored but not used.**
 - **`4008 too_many_messages` isn't sent yet**: there is no rate limit on client messages.
 - **A channel removal during the connect can be missed.** It arrives after the memberships are loaded but
   before the socket joins its channels, so the socket gets that channel's events until it reconnects
   (at most 15 minutes) ([CHAT-271](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-271)).
-- **The web app never sends `watch`.**
 
 ## Key code
 

@@ -45,7 +45,7 @@ sequenceDiagram
    | `membership.changed` | `members:{user_id}`, `channel:{channel_id}` |
    | `team.member.changed`, `user.deactivated` | `members:{user_id}` |
    | `channel.updated` | `channel:{channel_id}` |
-   | `team.deleted` | `version:all`, then every `channel:*` key (the event only has `team_id`) |
+   | `team.deleted` | `version:all`, then every `channel:*` and `members:*` key (the event only has `team_id`) |
 
    The version stops a request that read chatty-core just before the change from caching its old answer
    afterwards ([live events](../realtime.md#the-cache-and-its-versions)).
@@ -83,7 +83,6 @@ sequenceDiagram
 - **Deleting a team doesn't stop live events right away.** Only `team.deleted` is sent, with no
   `membership.changed removed` per channel, and the gateway does nothing for it. The team's channels are
   read-only, so no new events arrive there.
-- **Watch uses the memberships loaded at connect** ([CHAT-231](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-231)).
 
 ## Key code
 

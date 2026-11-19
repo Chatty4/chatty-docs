@@ -40,3 +40,12 @@ Plain meanings for the hard words.
 | Cache hit / miss | Hit: the answer is in Redis. Miss: it isn't, so chatty-chat asks chatty-core and stores it |
 | Version counter | A Redis counter per cached key that events increment; a cache write is refused if it changed meanwhile |
 | Close code | The number a WebSocket is closed with; it tells the web app whether to refresh the token, log out or just reconnect |
+| Presigned URL | A MinIO link with a signature in it, valid a few minutes. Whoever has it can do that one thing (upload or download that file) without a token |
+| Attach / detach | chatty-chat telling chatty-core a file is now in a message, or that its message is gone. An attached file is never cleaned up |
+| Outbox | The `channel_events` table, also used as a queue: the relay sends its unsent rows to Kafka, so an event is sent only if its change was saved |
+| Relay | The process that reads the outbox and sends it to Kafka in order, one at a time |
+| Kafka | A log of events that consumers read at their own pace and can read again; here, the topic `chat.events` |
+| Web Push | A notification the browser shows even when Chatty is closed, sent through the browser's push service |
+| Push subscription | What a browser gives for Web Push: a push service URL (`endpoint`) and two keys to encrypt the message |
+| VAPID | The key pair that proves a push comes from Chatty: the push worker signs with the private half, the browser subscribes with the public one |
+| Full-text search | Finding messages by words, not exact text: Postgres matches word stems ("deploy" finds "deployed") |

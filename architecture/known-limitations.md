@@ -4,7 +4,8 @@ What is not right yet, grouped by theme.
 
 ## Auth
 
-- **Access tokens cannot be revoked before expiry.** Logout and password-change revoke the refresh token, but the access token issued to that device stays valid for up to 15 minutes. A token blocklist (e.g. in Redis) is the standard mitigation when that window matters.
+- **A refresh token replayed within 30 s isn't caught.** The grace for a retry after a lost answer also gives whoever sends the rotated token a new pair, and both chains stay live.
+- **Access tokens cannot be revoked before expiry.** Logout and password-change delete the refresh token, but the access token issued to that device stays valid for up to 15 minutes. A token blocklist (e.g. in Redis) is the standard mitigation when that window matters.
 - **No 2FA / MFA.** Password-only authentication.
 - **Tokens are not bound to IP or device.** A stolen access token can be replayed from any IP until it expires.
 - **Rate limits are off while Redis is down.** chatty-core fails open (CHAT-254): login, register, password change and invite lookup and join keep working, but nothing limits password guesses until Redis is back. Each wrong login still costs ~1.2 s of hashing, and `/health` reports Redis as down.
@@ -13,9 +14,9 @@ What is not right yet, grouped by theme.
 ## Teams and channels
 
 - **Deleting a team doesn't stop live events right away.** chatty-core sends only `team.deleted`, with no `membership.changed removed` for each channel, and chatty-chat doesn't unsubscribe open WebSockets from the team's channels for it yet. Members keep receiving those channels' events until they reconnect or their access token expires (up to 15 minutes). Removal from a channel, leaving or being removed from a team (CHAT-263) and deactivation are immediate ([CHAT-185](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-185)).
-- **A user removed from a team can still watch its public channels until they reconnect.** chatty-chat checks a WebSocket `watch` against the memberships it loaded when the socket connected, so after leaving or being removed from a team, the user can start a new watch on that team's public channels and receive their live events until they reconnect or their access token expires (up to 15 minutes). A watch that is already running ends right away ([CHAT-231](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-231)).
+- **Opening a DM and creating a channel don't take the team lock.** Join and add members check team membership again under a lock on the team row; `open_dm` and channel create check it before, without the lock. A removal from the team at the same moment can leave the removed user in a DM or owning a new channel of that team. chatty-chat only checks the channel's members, so they could keep reading and writing that DM.
 - **No unarchive.** An archived channel stays read-only; there is no endpoint to undo it.
-- **A deleted team's attachments stay listed in chatty-chat.** `clean_up_files` removes the files from MinIO, but chatty-chat's `attachments` rows stay. Nobody can reach them, because the team answers `404`.
+- **A deleted team's attachments stay listed in chatty-chat.** `clean_up_files` removes the files from MinIO, but chatty-chat's `attachments` rows stay. chatty-core answers `404` for the team, but chatty-chat still lets the channel's members read its history, and `GET /messages/{id}/attachments` signs links to objects that are gone: following one gives MinIO's `404`.
 
 ## Chat
 
@@ -23,8 +24,10 @@ What is not right yet, grouped by theme.
 
 ## Messages and live events
 
-- **Channel events aren't sent to Kafka yet.** `channel_events` is meant to be the outbox for Kafka, but the relay doesn't run: `published_at` stays null, and live events go over Redis pub/sub only. The nightly cleanup (CHAT-191) deletes by age only for now; once the relay runs, decide whether rows it never sent may be deleted.
-- **The cleanup runs from a loop in the container.** It runs once a day after the `chat` container starts, and the 24 h timer restarts with the container. Production needs a real scheduled job.
+- **The gateways don't read Kafka.** The outbox relay sends every channel event to Kafka, but the gateways still get them from Redis pub/sub, published by the API after the commit. Kafka only feeds the push worker for now.
+- **The relay doesn't notice it lost its lock.** If its control connection drops, the advisory lock and `LISTEN` are gone but the loop goes on, so a second relay can start next to it. The poll still sends events.
+- **A deactivated user still gets push notifications.** Deactivation keeps their channel memberships, and nothing deletes their push subscriptions, so their browsers keep getting previews.
+- **The cleanups run from loops in the containers.** `clean_up_events` runs once a day in `chat`, `purge_refresh_tokens` once a day and `clean_up_files` every hour in `core`, and each timer restarts with its container. Production needs real scheduled jobs.
 - **A live event is lost while Redis is down.** The message is saved and its event row is written, but nobody hears it live. Clients get it from `POST /sync`; when Redis is back the gateway closes every socket with `1001` so they reconnect and sync.
 - **One stuck socket delays its gateway's events.** The gateway sends to a channel's sockets together; a socket that stops reading holds up the next event for everyone on that process for up to 5 s, once, before it is dropped and closed with `1001 too_slow`. A queue per socket is the fix if the load test shows it ([CHAT-224](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-224)).
 - **Sync makes up to two queries per channel**, for up to 500 channels in one call ([CHAT-224](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-224)).
@@ -37,7 +40,7 @@ What is not right yet, grouped by theme.
 - **A page refresh can flicker offline and online,** also on the early reconnect before a token expires. A wait of about 5 s before `offline` would fix it.
 - **A last close and a new connect at the same moment can end in the wrong order.** `offline` can land after `online`, and the user looks offline until they reconnect.
 - **Unread mentions are capped at 100, like unread messages.** The contract states the cap only for `unread`; capping both keeps `mentions` at most `unread` ([CHAT-208](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-208)).
-- **Not built yet:** files on messages ([CHAT-212](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-212)).
+- **A detach that keeps failing leaves files attached to no message.** After a failed send it is tried once, after a delete three times, then logged; nothing retries it later.
 
 
 ## Web
@@ -45,15 +48,13 @@ What is not right yet, grouped by theme.
 - **Tokens are in `localStorage`.** The tabs need to share them, but any script running on the page can read them, and the Nginx config sets no `script-src` Content Security Policy.
 - **A typing letter right after a message can show up to about 3 s late.** The server's 3 s limit still counts from the last `typing`, so the web app waits for it.
 - **Each token renewal closes the socket before opening the next.** Together with the presence flicker above, a user with one tab can show as offline and online about every 14 minutes.
-- **The sidebar doesn't follow new channels and DMs.** Being added to one shows only after the team changes or the page reloads.
+- **The sidebar doesn't hear about new channels and DMs directly.** No event says I was added, so the sidebar reloads when a message arrives for a channel it doesn't list, after a reconnect, or when the team changes. A channel I'm added to stays hidden until one of these.
 - **Channels that aren't open only update their badge.** Their messages load from history when opened.
-- **The web app never sends `watch`.**
-- **The Attach file button does nothing yet** ([CHAT-214](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-214)).
+- **The Attach file button does nothing yet, and files on messages aren't shown** ([CHAT-214](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-214)).
 - **The connection status isn't shown.** A dropped socket looks like a quiet channel.
 - **Drafts and failed messages are in memory**, so a reload loses them.
-- **CI doesn't run the tests.** `.github/workflows/ci.yml` runs lint, typecheck and build but not `npm test`, and uses Node 22 while the README and the Docker image use Node 24.
 
 ## Infra
 
 - **No HTTPS in the dev stack.** All traffic between the browser, Nginx, and the service containers is plain HTTP. TLS termination is expected to happen outside this stack in any non-dev environment, but where is not decided yet. Until then chatty-core sends no HSTS header, sets no `SECURE_SSL_REDIRECT` / `SECURE_PROXY_SSL_HEADER`, and CI doesn't run `manage.py check --deploy`.
-- **The file cleanup runs from a loop in the container.** `clean_up_files` runs every hour after the `core` container starts, and the timer restarts with the container. Production needs a real scheduled job, like the other cleanups.
+- **The MinIO setup is only in `setup.bat`.** The bucket, the two service users and the rule that deletes `uploads/` after a day are created by `setup.bat` and `reset-db.bat`. Any other environment has to create them the same way; without the rule, objects written to an upload URL after confirm stay forever ([upload a file](flows/upload-a-file.md)).

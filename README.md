@@ -31,7 +31,7 @@ The contracts are the source of truth. Pages here link to them and never copy en
 | [Auth and security](architecture/auth-and-security.md) | Tokens, refresh rotation, the service token, passwords, keys |
 | [Live events](architecture/realtime.md) | Sockets, Redis pub/sub, gateways and the cache: how a change reaches every open tab |
 | [Data map](architecture/data-map.md) | What is stored in Postgres, Redis, MinIO and Kafka, and why |
-| [Decisions](architecture/decisions.md) | The reasons behind D-01 to D-11, in plain words |
+| [Decisions](architecture/decisions.md) | The reasons behind D-01 to D-18, in plain words |
 | [Glossary](architecture/glossary.md) | Plain meanings for the hard words |
 | [Known limitations](architecture/known-limitations.md) | What is not right yet, with links |
 | [Flows](architecture/flows/README.md) | One user journey per page |

@@ -88,7 +88,8 @@ sequenceDiagram
    `GET /api/chat/v1/ws?token=<access token>`.
 8. chatty-chat accepts, checks the token and loads the memberships, from Redis or chatty-core. Then the gateway
    adds the socket to the user's channels and teams, and subscribes in Redis where this process needs it.
-9. If this is the user's first socket, they become [online](see-who-is-online.md). The web app doesn't show it yet.
+9. If this is the user's first socket, they become [online](see-who-is-online.md), and the others in their
+   teams see a green dot on their avatar.
 10. From now on the tab sends a heartbeat every 20 s, and also when it is shown or hidden.
 
 **4. Open a channel** ([open a channel, reconnect and sync](reconnect-and-sync.md))
@@ -138,7 +139,9 @@ sequenceDiagram
 
 **8. Log out** ([refresh and logout](refresh-and-logout.md))
 
-27. In the user menu, Log out calls `POST /auth/logout` with this device's refresh token, inside the Web Lock.
+27. In the user menu, Log out first turns off push notifications for this browser, if they were on
+    (`DELETE /push/subscriptions`, while the access token still works; a failure doesn't stop the logout).
+    Then it calls `POST /auth/logout` with this device's refresh token, inside the Web Lock.
 28. `endSession` clears the tokens, even if that call failed, and tells the other tabs, which log out too.
 29. `RequireAuth` sends the tab to `/login`. The app shell unmounts: the socket closes, the timers stop, and the
     messages in memory are gone.
@@ -169,7 +172,8 @@ sequenceDiagram
 - **An access token still works after logout**, for up to 15 minutes (D-10).
 - **Each token renewal closes the socket first**, so a user with one tab has a moment with no socket about every
   14 minutes. It can show as offline and online to the others.
-- **A new channel or DM doesn't show in the sidebar** until the team changes or the page reloads.
+- **A channel I'm added to doesn't show in the sidebar** until a message arrives in it, the socket
+  reconnects or the team changes.
 - **Channels that aren't open only update their badge.** Their messages load when the channel is opened.
 
 More: [known limitations](../known-limitations.md#web).
