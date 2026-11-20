@@ -43,11 +43,11 @@ Details: [auth and security](../../architecture/auth-and-security.md).
 | Teams | Create (with a `general` channel), rename, set the icon, delete; directory and roles; remove members; leave (the last active owner can't) | `api-core.md` |
 | Invites | Create, list and revoke invite links; open one and join the team and its default channels | `api-core.md` |
 | Channels | Create, browse, rename, archive; join, leave, add and remove members | `api-core.md` |
-| DMs | Open a DM with 1 to 7 team members; the same group of people always gets the same DM | `api-core.md` |
+| DMs | Open a DM with 1 to 7 team members; the same group of people always gets the same DM. Checked and created under the team lock, like channel create, join and add members (CHAT-284) | `api-core.md` |
 | My channel settings | Notification level, muted, hidden (`PUT channels/{channel_id}/me`) | `api-core.md` |
 | Files | Upload in three steps (D-15): `POST /files` gives a presigned `PUT` URL for `uploads/{file_id}`, the browser uploads straight to MinIO, `POST /files/{file_id}/confirm` copies it to its final key and checks it. `GET /files/{file_id}` redirects to an avatar or team icon; `DELETE` deletes my own file that is in no message | `api-core.md`, [upload a file](../../architecture/flows/upload-a-file.md) |
 | Attach and detach (internal) | `POST /internal/files/attach` marks all the files of a message attached, or none (D-03); `POST /internal/files/detach` deletes the files of a message that was deleted or never saved | `api-internal.md` |
-| Users (admin) | Deactivate users from Django admin. Users are never deleted | `users/admin.py` |
+| Users (admin) | Deactivate users from Django admin. Users are never deleted. The admin's CSS and icons are collected into the image (`collectstatic`) and served by WhiteNoise, since uvicorn serves no static files | `users/admin.py`, `config/settings.py` |
 | Cleanup | `python manage.py purge_refresh_tokens` deletes refresh tokens that expired more than 30 days ago (daily). `python manage.py clean_up_files` runs every hour from the `core` container (CHAT-168). It removes files nobody uses from MinIO and the database: uploads never confirmed, attachments not sent within 24 h, replaced avatars and team icons, and every file of a deleted team (D-17) | `authn/management/commands/`, `files/management/commands/` |
 
 **Who can do what in a channel** (rules in `channels/access.py`):

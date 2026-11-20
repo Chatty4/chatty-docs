@@ -14,7 +14,6 @@ What is not right yet, grouped by theme.
 ## Teams and channels
 
 - **Deleting a team doesn't stop live events right away.** chatty-core sends only `team.deleted`, with no `membership.changed removed` for each channel, and chatty-chat doesn't unsubscribe open WebSockets from the team's channels for it yet. Members keep receiving those channels' events until they reconnect or their access token expires (up to 15 minutes). Removal from a channel, leaving or being removed from a team (CHAT-263) and deactivation are immediate ([CHAT-185](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-185)).
-- **Opening a DM and creating a channel don't take the team lock.** Join and add members check team membership again under a lock on the team row; `open_dm` and channel create check it before, without the lock. A removal from the team at the same moment can leave the removed user in a DM or owning a new channel of that team. chatty-chat only checks the channel's members, so they could keep reading and writing that DM.
 - **No unarchive.** An archived channel stays read-only; there is no endpoint to undo it.
 - **A deleted team's attachments stay listed in chatty-chat.** `clean_up_files` removes the files from MinIO, but chatty-chat's `attachments` rows stay. chatty-core answers `404` for the team, but chatty-chat still lets the channel's members read its history, and `GET /messages/{id}/attachments` signs links to objects that are gone: following one gives MinIO's `404`.
 
