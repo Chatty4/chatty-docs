@@ -58,8 +58,12 @@ sequenceDiagram
    memberships again (the cache, or chatty-core), not the ones from connect, so someone who just left a
    team can't watch its channels, and a public channel newer than the cache is looked up in chatty-core.
    Not public in my teams, or chatty-core unreachable: `{"type": "error", "code": "cannot_watch"}`, and the
-   socket stays open. The web app watches a public channel the user opens without joining it, again after
-   every reconnect.
+   socket stays open. At most one `watch` per second per socket counts: one sent sooner is ignored without
+   an error, before chatty-core is asked, so a flood of watches can't reach chatty-core
+   ([CHAT-286](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-286)). The web app watches a public
+   channel the user opens without joining it, again after every reconnect, and keeps its watches at least
+   1.1 s apart: one that comes sooner waits for its turn, and only the newest waiting one is sent
+   (`src/lib/ws/watch-throttle.ts`).
 6. **Typing.** `{"type": "typing", "channel_id": …}` tells the others in the channel, at most every 3 s. It is
    ignored without an error if the user can't write there, and it doesn't reset the 60 s timer. See
    [live events](../realtime.md#someone-is-typing).
@@ -83,7 +87,8 @@ sequenceDiagram
 
 ## ⚠️ Known gaps
 
-- **`4008 too_many_messages` isn't sent yet**: there is no rate limit on client messages.
+- **`4008 too_many_messages` isn't sent yet.** `watch` (once a second) and `typing` (once every 3 s per
+  channel) are limited; other client messages and connecting aren't.
 - **A channel removal during the connect can be missed.** It arrives after the memberships are loaded but
   before the socket joins its channels, so the socket gets that channel's events until it reconnects
   (at most 15 minutes) ([CHAT-271](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-271)).
@@ -94,6 +99,7 @@ sequenceDiagram
 |---|---|
 | `chatty-chat/app/api/routers/ws.py` | `websocket_endpoint`, `handle_message`, `handle_typing`, the deadlines |
 | `chatty-chat/app/schemas/ws.py` | `Heartbeat`, `Watch`, `Unwatch`, `ClientMessage` |
-| `chatty-chat/app/services/gateway.py` | `connect`, `disconnect`, `heartbeat`, `can_type`, `watch`, `unwatch` |
+| `chatty-chat/app/services/gateway.py` | `connect`, `disconnect`, `heartbeat`, `can_type`, `can_watch`, `watch`, `unwatch` |
 | `chatty-chat/app/core/codes.py` | `CloseCode` |
-| `chatty-chat/tests/api/test_ws.py` | Close codes, heartbeats and watch |
+| `chatty-chat/tests/api/test_ws.py` | Close codes, heartbeats, watch and its limit |
+| `chatty-web/src/lib/ws/watch-throttle.ts` | Keeps the web app's `watch` frames at least 1.1 s apart |

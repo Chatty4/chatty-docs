@@ -40,7 +40,7 @@ sequenceDiagram
 
 1. chatty-core checks that the channel exists, that I'm in its team, that it's public and that it isn't archived.
 2. It adds me as a `member` with `notify_level: mentions`. If I'm already in the channel, it returns my existing membership with `200`, so joining twice is safe. Two joins at the same moment still create one row (`get_or_create`).
-3. The add runs under a lock on the team row, after checking again that I'm in the team. A removal from the team at the same moment then runs before or after it, never between, so a removed user can't be left with a channel row. Adding members (`POST /channels/{channel_id}/members`) does the same.
+3. The add runs under a lock on the team row, after checking again that I'm in the team. A removal from the team at the same moment then runs before or after it, never between, so a removed user can't be left with a channel row. Adding members (`POST /channels/{channel_id}/members`) does the same, and so do creating a channel and opening a DM ([CHAT-284](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-284)): the creator, or everyone in the DM, is checked again under the team lock, and the DM lookup and insert happen in that same transaction. Two people opening the same new DM at once wait for each other on the lock, so the second gets the DM the first created.
 
 **Leave** (`POST /channels/{channel_id}/leave`)
 
@@ -89,7 +89,8 @@ removed user stops getting its events at once ([core events](core-events.md)).
 | File | What is there |
 |---|---|
 | `channels/views.py` | `JoinChannelView`, `LeaveChannelView`, `ChannelMemberDetailView` |
-| `channels/services.py` | `ChannelService.join`, `leave`, `remove_member`, `_leave_sync` (the transaction) |
+| `channels/services.py` | `ChannelService.join`, `leave`, `remove_member`, `_leave_sync` (the transaction); `_lock_team_sync`, the team lock and membership check that `_create_sync` and `_open_dm_sync` share |
 | `channels/repositories/members.py` | `ChannelMemberRepository.get_or_create`, `lock_owner_ids_sync` (the channel-row lock), `promote_first_joined_sync` |
 | `channels/access.py` | Who can read, write and manage a channel |
 | `tests/channels/test_leave_race.py` | The two-leaves-at-once race, run in two threads like two workers |
+| `tests/channels/test_create_channel_race.py`, `tests/channels/test_open_dm_race.py` | A channel create or a DM open racing a team removal, and two opens of the same new DM |

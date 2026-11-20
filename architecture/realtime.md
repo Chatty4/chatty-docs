@@ -334,8 +334,11 @@ stateDiagram-v2
 - Each `watch` loads the user's memberships again (`AccessService.get_user_for_watch`), so a user who just
   left a team can't start one on its channels. A public channel created after the cached list is looked up
   in chatty-core and counts too.
+- At most one `watch` per second per socket (`Gateway.can_watch`). One sent sooner is ignored without an
+  error, before the memberships are loaded, so it never reaches the cache or chatty-core (CHAT-286).
 - The web app watches a public channel the user opens without joining it, and sends `watch` again after
-  every reconnect (`useWatchChannel`).
+  every reconnect (`useWatchChannel`). Its watches go out at least 1.1 s apart: one that comes sooner waits
+  for its turn, a newer one replaces it, and a new socket starts over (`createWatchThrottle`).
 
 ## Keeping the socket alive
 
@@ -439,7 +442,7 @@ Full list: [known limitations](known-limitations.md).
 |---|---|
 | `chatty-chat/app/main.py` | The lifespan: both Redis clients, the gateway and the `core.events` listener |
 | `chatty-chat/app/api/routers/ws.py` | Accept, token and memberships check, client messages, `handle_typing`, deadlines, close codes |
-| `chatty-chat/app/services/gateway.py` | `Gateway`: `connect`, `disconnect`, `heartbeat`, `can_type`, `watch`, `run`, channel, typing, presence and core events, the 5 s send limit |
+| `chatty-chat/app/services/gateway.py` | `Gateway`: `connect`, `disconnect`, `heartbeat`, `can_type`, `can_watch`, `watch`, `run`, channel, typing, presence and core events, the 5 s send limit |
 | `chatty-chat/app/services/connection_registry.py` | `ConnectionRegistry` and `SocketGroups`: the sockets of each user, channel and team, first and last socket |
 | `chatty-chat/app/clients/presence.py` | `PresenceStore`: who is online |
 | `chatty-chat/app/services/event_bus.py` | `EventBus.publish`, `send_to_user`, `send_typing`, the Redis channel names |

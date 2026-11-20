@@ -106,6 +106,7 @@ after it.
 | Delete without the right (D-05) | `403 forbidden` |
 | Archived, or team deleted | `409 channel_archived` |
 | Deleted at the same moment by someone else | Edit: `409 message_deleted`. Delete: `204`, one event only |
+| More than 30 edits, or 30 deletes, in a minute | `429 rate_limited` with `Retry-After`; the web app shows the wait ([rate limits](../auth-and-security.md#rate-limits)) |
 
 ## ⚠️ Known gaps
 

@@ -59,8 +59,11 @@ sequenceDiagram
 4. One transaction: the next `seq`, then the message row is locked `FOR SHARE` and checked again. A
    delete that committed meanwhile gives `409`, and a delete that comes later waits for this transaction.
    Then `INSERT … ON CONFLICT DO NOTHING RETURNING`: no row back means I already had this emoji, so the
-   transaction rolls back and the `seq` is given back. Otherwise the `reaction.added` row
-   `{message_id, user_id, emoji}`.
+   transaction rolls back and the `seq` is given back. Otherwise my different emoji on the message are
+   counted: more than 20 is `409 reaction_limit_reached`, and the insert and the `seq` roll back
+   ([CHAT-286](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-286)). Counting after the insert
+   means an emoji I already have never counts as new, and the counter lock makes my adds wait for each
+   other, so two at once can't both pass. Otherwise the `reaction.added` row `{message_id, user_id, emoji}`.
 5. After the commit `reaction.added` is published. The answer is `200` with the message's reactions.
 
 **Remove** (`DELETE /messages/{message_id}/reactions/{emoji}`)
@@ -104,10 +107,13 @@ request worked ([CHAT-206](https://assist-team-m66z4ph1.atlassian.net/browse/CHA
 | Add an emoji I already have, or remove one I don't have | `200`, nothing changes, no event |
 | The same add twice at once | One reaction, one event; the other request rolls back |
 | The message is deleted at the same moment | The add gets `409`, or lands first and is removed by the delete |
+| A 21st different emoji of mine on the message | `409 reaction_limit_reached`, no `seq`, no event. The web app: "You can add at most 20 different reactions to a message. Remove one first." |
+| More than 60 adds and removes in a minute | `429 rate_limited` with `Retry-After`; the web app shows the wait ([rate limits](../auth-and-security.md#rate-limits)) |
 
 ## ⚠️ Known gaps
 
-- **No limit on reactions** per message or per user; the contract sets none.
+- **Only one user's emoji are capped.** A user can have 20 different emoji on a message, but a message has no
+  overall limit: many users can each add their own.
 - **No list of who reacted.** `reactions` only has `count` and `me`, so the web app can't show names on
   hover yet (see [CHAT-206](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-206)).
 - **`❤` and `❤️` are two reactions.** Both are valid emoji (the second has an invisible variation
@@ -119,7 +125,7 @@ request worked ([CHAT-206](https://assist-team-m66z4ph1.atlassian.net/browse/CHA
 |---|---|
 | `chatty-chat/app/api/routers/reactions.py` | `PUT` and `DELETE …/reactions/{emoji}` |
 | `chatty-chat/app/schemas/messages.py` | `check_emoji` and the `Emoji` path type, `ReactionsResponse` |
-| `chatty-chat/app/services/reaction_service.py` | `ReactionService.add`, `remove` |
-| `chatty-chat/app/repositories/reactions.py` | `add_reaction`, `remove_reaction`, `list_reactions` (many messages in one query), `delete_message_reactions` |
+| `chatty-chat/app/services/reaction_service.py` | `ReactionService.add`, `remove`, `MAX_EMOJI_PER_USER` |
+| `chatty-chat/app/repositories/reactions.py` | `add_reaction`, `count_user_emoji`, `remove_reaction`, `list_reactions` (many messages in one query), `delete_message_reactions` |
 | `chatty-chat/app/repositories/messages.py` | `lock_undeleted_message`: the `FOR SHARE` lock |
 | `chatty-chat/tests/integration/test_add_reaction_real.py` | Two identical adds at once, a reaction racing a delete, history per user |

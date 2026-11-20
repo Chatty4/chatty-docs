@@ -144,6 +144,10 @@ sequenceDiagram
     (`DELETE /push/subscriptions`, while the access token still works; a failure doesn't stop the logout).
     Then it calls `POST /auth/logout` with this device's refresh token, inside the Web Lock.
 28. `endSession` clears the tokens, even if that call failed, and tells the other tabs, which log out too.
+    On every `logged-out` event, the browser is also unsubscribed from push if it still is. That covers the
+    other tabs, and a session that ends without the button: an expired or revoked refresh token, or a
+    deactivated user. The `DELETE` can't be sent then, with no token left; the push service answers `410`
+    to the next push and the worker deletes the row (CHAT-282).
 29. `RequireAuth` sends the tab to `/login`. The app shell unmounts: the socket closes, the timers stop, and the
     messages in memory are gone.
 30. chatty-chat's `disconnect` removes the socket. If it was the user's last one they go
@@ -183,7 +187,7 @@ More: [known limitations](../known-limitations.md#web).
 
 | File | What is there |
 |---|---|
-| `chatty-web/src/features/auth/hooks/use-auth-state.ts` | Restore, login, register, logout |
+| `chatty-web/src/features/auth/hooks/use-auth-state.ts` | Restore, login, register, logout, push unsubscribe on every `logged-out` |
 | `chatty-web/src/lib/session.ts` | `startSession`, `endSession`, `refreshSession` |
 | `chatty-web/src/app/layouts/app-layout.tsx` | The providers that start after login |
 | `chatty-web/src/features/ws/ws-provider.tsx` | Connect, reconnect, `POST /sync` |

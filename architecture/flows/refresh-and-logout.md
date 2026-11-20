@@ -74,7 +74,8 @@ must not refresh at the same time:
 - The access token is refreshed a minute before it expires, and once more when a request gets
   `401 unauthorized`. That request is then repeated.
 - A rejected refresh token (`401`) or a deactivated user (`403`) ends the session everywhere. A server that
-  can't be reached keeps it.
+  can't be reached keeps it. A session that ends this way also unsubscribes the browser from push, so the
+  old user's notifications stop ([get a push notification](get-a-push-notification.md)).
 
 Code: `chatty-web/src/lib/session.ts`.
 

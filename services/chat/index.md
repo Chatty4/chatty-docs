@@ -12,7 +12,7 @@ WebSocket gateway, sync.
 | Events | Channel events in [events.md](https://github.com/Chatty4/chatty-infra/blob/dev/docs/events.md); chatty-core's events in [core-events.md](https://github.com/Chatty4/chatty-infra/blob/dev/docs/core-events.md) |
 | Health | `GET /health`: the database, Redis and the two background tasks. The relay and the push worker have no health check |
 | Processes | The API (`app.main:app`), the outbox relay (`python -m app.jobs.relay`) and the push worker (`python -m app.jobs.push_worker`), each in its own container from the same image |
-| Stores | Postgres `chat_db` (messages, attachments, reactions, pins, channel events, seq counters, read state, push subscriptions), Redis (cache, presence, push dedupe, `core.events`, `chat.events:*`, `chat.typing:*`, `chat.presence:*`, `chat.users:*`), Kafka (`chat.events`). See the [data map](../../architecture/data-map.md) |
+| Stores | Postgres `chat_db` (messages, attachments, reactions, pins, channel events, seq counters, read state, push subscriptions), Redis (cache, presence, push dedupe, rate limits, `core.events`, `chat.events:*`, `chat.typing:*`, `chat.presence:*`, `chat.users:*`), Kafka (`chat.events`). See the [data map](../../architecture/data-map.md) |
 | Local address | <http://127.0.0.1:8001> |
 
 How the live parts work together: [live events](../../architecture/realtime.md).
@@ -65,7 +65,7 @@ The socket is accepted first and closed after, so the browser sees our close cod
 | Send | Up to 10 files are attached in chatty-core first (D-03). Then one transaction: the channel's next `seq` (a locked counter row), the message, its attachments, a `channel_events` row, the sender's read position. Publishes `message.created` after the commit. A retry with the same `client_msg_id` returns the original with `200`. Files of a failed send are detached | [send a message](../../architecture/flows/send-message.md) |
 | Attachments | `GET /messages/{id}/attachments`: download links for all the files of a message, in the order sent, signed by chatty-chat itself, valid 5 minutes (D-02) | [send a message](../../architecture/flows/send-message.md) |
 | Edit, delete | Edit the body (author only) or soft-delete (D-05). Both take the next `seq` and publish `message.edited` / `message.deleted`. A delete also clears the text in the message's earlier events, deletes its reactions and pin, and detaches its files after the commit | [edit and delete](../../architecture/flows/edit-and-delete-message.md) |
-| Reactions | `PUT` / `DELETE /messages/{id}/reactions/{emoji}`: add or remove my emoji. A real change takes the next `seq` and publishes `reaction.added` / `reaction.removed`; the same add twice, or removing one I don't have, is `200` with no event. Both answer the message's reactions with `count` and `me` | [react to a message](../../architecture/flows/react-to-a-message.md) |
+| Reactions | `PUT` / `DELETE /messages/{id}/reactions/{emoji}`: add or remove my emoji. A real change takes the next `seq` and publishes `reaction.added` / `reaction.removed`; the same add twice, or removing one I don't have, is `200` with no event. At most 20 different emoji per user on a message (`409 reaction_limit_reached`). Both answer the message's reactions with `count` and `me` | [react to a message](../../architecture/flows/react-to-a-message.md) |
 | Pins | `POST` / `DELETE /channels/{id}/pins/{message_id}` and `GET /channels/{id}/pins`. A pin takes the next `seq` and publishes `pin.added`; pinning again is `200` with the existing pin and no event. Max 100 per channel (`409 pin_limit_reached`), checked under the counter lock so two pins can't both pass at 99. Unpinning one that isn't pinned is `204` with no event. The list is newest first, with full message objects | [pin a message](../../architecture/flows/pin-a-message.md) |
 | Presence | A user is online while they have an open WebSocket, in every team they're in. Redis keeps one line per socket, so the first socket sends `online` and the last sends `offline`, across processes. `GET /teams/{team_id}/presence` gives a new tab the current list | [see who is online](../../architecture/flows/see-who-is-online.md) |
 | History | `GET /channels/{id}/messages`: newest first, with the channel's `last_seq`, each message's reactions, `pinned` and files (one query each for the page). `before_seq` pages back, `after_seq` pages forward (`has_more_after`), and `around_seq` centers a page on one message, to jump to it. All in one `REPEATABLE READ` snapshot. Deleted messages stay, empty | [reconnect and sync](../../architecture/flows/reconnect-and-sync.md) |
@@ -74,18 +74,19 @@ The socket is accepted first and closed after, so the browser sees our close cod
 | Typing | A `typing` message on the WebSocket, at most every 3 s per socket and channel, goes to the channel's other sockets through `chat.typing:{channel_id}`. Never stored, no `seq` | [live events](../../architecture/realtime.md#someone-is-typing) |
 | WebSocket gateway | One Redis pub/sub connection per process, one subscription per channel with a local socket. Forwards channel events, typing and presence, follows membership changes, closes deactivated users, heartbeat and watch | [connect the WebSocket](../../architecture/flows/websocket.md), [live events](../../architecture/realtime.md) |
 | Event bus | `EventBus.publish(ChannelEvent)`: one `PUBLISH` on `chat.events:{channel_id}` per event, after the commit, for the gateways | [live events](../../architecture/realtime.md#from-a-saved-change-to-every-tab) |
-| Outbox relay | `python -m app.jobs.relay`, its own container: sends the unpublished `channel_events` rows to the Kafka topic `chat.events` in order, keyed by `channel_id`, then marks them. Woken by `NOTIFY`, polls every 0.2 s, one at a time (advisory lock) | [get a push notification](../../architecture/flows/get-a-push-notification.md) |
-| Push | `POST` / `DELETE /push/subscriptions` save and forget this browser (D-13). `python -m app.jobs.push_worker`, its own container, reads `message.created` from Kafka and sends Web Push to members who want it and have no tab on screen | [get a push notification](../../architecture/flows/get-a-push-notification.md) |
+| Outbox relay | `python -m app.jobs.relay`, its own container: sends the unpublished `channel_events` rows to the Kafka topic `chat.events` in order, keyed by `channel_id`, then marks them. No row lock and no transaction while it waits on Kafka, so a delete never waits for it (CHAT-285); the batch is queued at once and awaited together. Woken by `NOTIFY`, polls every 0.2 s, one relay at a time (advisory lock) | [get a push notification](../../architecture/flows/get-a-push-notification.md) |
+| Push | `POST` / `DELETE /push/subscriptions` save and forget this browser (D-13). `python -m app.jobs.push_worker`, its own container, reads `message.created` from Kafka and sends Web Push to active members who want it and have no tab on screen, unless the message was deleted meanwhile, up to 10 sends at once. A deactivated user's subscriptions are deleted on `user.deactivated` (CHAT-282, CHAT-283, CHAT-287) | [get a push notification](../../architecture/flows/get-a-push-notification.md) |
+| Rate limits | Per user, per minute, in Redis (`rate:{name}:{user_id}`): send 60, edit 30, delete 30, reactions 60, pins 20, read 120, history 120, events 120, sync 20, search 30, push subscriptions 10. Over a limit: `429 rate_limited` with `Retry-After`. At most one `watch` per second per socket. Redis down: the limits are skipped (CHAT-286) | [auth and security](../../architecture/auth-and-security.md#rate-limits) |
 | chatty-core cache | `members:{user_id}` and `channel:{channel_id}` for 5 minutes. A write is refused if an event bumped the key's version meanwhile (CHAT-266) | [live events](../../architecture/realtime.md#the-cache-and-its-versions) |
 | Cleanup | `python -m app.jobs.clean_up_events` deletes `channel_events` older than 30 days, each channel's oldest first. Runs once a day from the `chat` container (CHAT-191). Clients that asked for deleted events get `gap_too_large` and reload the history | [reconnect and sync](../../architecture/flows/reconnect-and-sync.md) |
-| `core.events` | Marks the cache keys an event makes stale; the gateway updates open sockets. On every (re)subscribe the whole cache is cleared (D-08) | [core events](../../architecture/flows/core-events.md) |
+| `core.events` | Marks the cache keys an event makes stale, and deletes a deactivated user's push subscriptions; the gateway updates open sockets. On every (re)subscribe the whole cache is cleared (D-08) | [core events](../../architecture/flows/core-events.md) |
 
 ## If something is down
 
 | Down | What happens | `/health` |
 |---|---|---|
 | Postgres | Every message, history and sync call fails with `500` | `503`, `"db": "error"` |
-| Redis | The cache is skipped and every check asks chatty-core. Publishing is logged and skipped; clients catch up with `POST /sync`. When Redis is back, the gateway closes every socket with `1001` and the cache is cleared | `503`, `"redis": "error"` |
+| Redis | The cache is skipped and every check asks chatty-core. Rate limits are skipped (fail open, logged as an error). Publishing is logged and skipped; clients catch up with `POST /sync`. When Redis is back, the gateway closes every socket with `1001` and the cache is cleared | `503`, `"redis": "error"` |
 | chatty-core | Access checks that aren't cached fail with `503 core_unavailable`. A WebSocket that connects meanwhile is closed with `1011` | not checked |
 | A background task (the gateway or the `core.events` listener) | It has stopped: open sockets or the cache are no longer kept right. The crash is logged | `503`, `"tasks": "error"` |
 | Kafka | The relay retries every second and the rows stay unpublished; push notifications wait. Messages and live events are unaffected | not checked |
@@ -97,8 +98,7 @@ Each health check gives up after 2 seconds. Code: `app/services/health_service.p
 
 - A crash sends no `offline`, so open tabs can show a user as online for too long.
 - The gateways get events from Redis pub/sub, not Kafka; Kafka only feeds the push worker.
-- A deactivated user still gets push notifications.
-- No rate limits: `429` and `4008 too_many_messages` are in the contract but never sent.
+- Rate limits are skipped while Redis is down, and `4008 too_many_messages` is in the contract but never sent.
 - A socket can miss a channel removal that happens while it connects ([CHAT-271](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-271)).
 
 Full list: [known limitations](../../architecture/known-limitations.md#messages-and-live-events).
@@ -135,3 +135,4 @@ Full list: [known limitations](../../architecture/known-limitations.md#messages-
 | `app/clients/kafka.py` | The Kafka producer and consumer |
 | `app/clients/core_events.py` | The `core.events` listener and cache clearing |
 | `app/core/security.py` | `decode_access_token`: the RS256 check |
+| `app/api/rate_limits.py`, `app/clients/rate_limiter.py` | `rate_limit()` and the `LIMIT_*` route dependencies; `RateLimiter`, the per-user counters in Redis |

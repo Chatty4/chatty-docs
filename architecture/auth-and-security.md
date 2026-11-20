@@ -44,13 +44,20 @@ chatty-chat calls chatty-core's `/internal` endpoints with a shared secret in th
 
 The token is set in both services via the `CORE_SERVICE_TOKEN` environment variable, injected by docker-compose from `chatty-infra/.env`.
 
-## Passwords and rate limits
+## Passwords
 
 **Password hashing:** PBKDF2-SHA256 (Django default). Password rules: minimum 10 characters, not entirely numeric, not too similar to the email or display name, not on the common-passwords list.
 
 **Timing:** an unknown email and a wrong password both take ~1.2 s to respond, so the response time does not reveal whether an account exists. chatty-core runs a dummy `set_password` call for unknown emails to match the cost of a real `check_password`.
 
-**Rate limits (all stored in Redis, keyed by the client's real IP behind Nginx):**
+## Rate limits
+
+Both services count requests in Redis, in fixed windows that start with the first request
+(`INCR` + `EXPIRE NX` in one pipeline). Over a limit, the request gets `429` with a `Retry-After` header in
+seconds. If Redis is down, both fail open: the limit is skipped, an error is logged, and the request goes
+on.
+
+**chatty-core**, keyed by the client's real IP behind Nginx (D-09) where there is no user yet:
 
 | Endpoint | Limit | Window | Key |
 |---|---|---|---|
@@ -63,6 +70,40 @@ The token is set in both services via the `CORE_SERVICE_TOKEN` environment varia
 Every attempt is counted before the password is checked, so parallel guesses all count. A success on
 `/auth/login` clears the email-and-IP counter and takes back its own hit on the IP counter; a success on
 `/auth/password` clears its counter.
+
+**chatty-chat** ([CHAT-286](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-286)), per user, in
+windows of 1 minute. The contract lists them in `api-chat.md`, "Rate limits". Endpoints in one row share
+one count:
+
+| Endpoint | Limit per minute | Redis key |
+|---|---|---|
+| `POST /channels/{id}/messages` | 60 | `rate:send:{user_id}` |
+| `PUT /messages/{id}` | 30 | `rate:edit:{user_id}` |
+| `DELETE /messages/{id}` | 30 | `rate:delete:{user_id}` |
+| `PUT` and `DELETE /messages/{id}/reactions/{emoji}` | 60 | `rate:reactions:{user_id}` |
+| `POST` and `DELETE /channels/{id}/pins/{message_id}` | 20 | `rate:pins:{user_id}` |
+| `POST /channels/{id}/read` | 120 | `rate:read:{user_id}` |
+| `GET /channels/{id}/messages` | 120 | `rate:history:{user_id}` |
+| `GET /channels/{id}/events` | 120 | `rate:events:{user_id}` |
+| `POST /sync` | 20 | `rate:sync:{user_id}` |
+| `GET /search` | 30 | `rate:search:{user_id}` |
+| `POST` and `DELETE /push/subscriptions` | 10 | `rate:push:{user_id}` |
+
+- The check is a route dependency (`app/api/rate_limits.py`, `RateLimiter` in
+  `app/clients/rate_limiter.py`). It runs after the token check, so a request without a token is `401` and
+  isn't counted, and before the body is read.
+- Not limited, because the web app calls them often and they are cheap: attachment links, the pin list,
+  `GET /unread`, presence and `/health`.
+- **Reactions also have a cap:** at most 20 different emoji per user on one message. The 21st is
+  `409 reaction_limit_reached` and takes no `seq`; adding an emoji I already have is still `200`.
+- **On the WebSocket:** at most one `watch` per second per socket; extra ones are ignored without an
+  `error`, before chatty-core is asked. `typing` keeps its own limit (once every 3 s per channel).
+  Connecting isn't limited.
+
+**In the web app**, a `429` says how long to wait, from `Retry-After`: a message that wasn't sent counts
+down and keeps its Retry button disabled until the wait is over, and edits, reactions, pins and search
+show the wait in their error. A gap fill that gets a `429` tries again after the wait; `POST /sync`
+doesn't, because live messages wait for it. `watch` frames are spaced at least 1.1 s apart.
 
 ## Secrets and keys
 

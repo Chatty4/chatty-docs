@@ -31,12 +31,12 @@ without foreign keys (D-01).
 | `pins` | A pinned message | Primary key `message_id`, so a message is pinned at most once. `pinned_by`, `pinned_at`; indexed by `(channel_id, pinned_at)` for the newest-first list. Max 100 per channel, counted under the channel's counter lock. Deleting a message deletes its pin in the same transaction, without `pin.removed`. Foreign key to `messages` (on delete cascade) |
 | `attachments` | A file on a message | What chatty-core's `attach` returned (D-03): `file_id` (primary key), `object_key`, `filename`, `mime`, `size`, and `position`, the file's place in the sent `file_ids`. Written in the send transaction. `object_key` never leaves chatty-chat; it signs the download links (D-02). A deleted message keeps its rows but shows no files. Foreign key to `messages` (on delete cascade) |
 | `read_state` | How far a user read a channel | `last_read_seq`, only ever moved forward (`GREATEST`). Sending moves it for the sender; `POST /channels/{id}/read` moves it, lowered to the channel's last `seq`. `GET /unread` counts the messages after it, capped at 100. No row means nothing read yet (CHAT-208) |
-| `push_subscriptions` | One browser that wants Web Push (D-13) | `endpoint` is unique: one browser, one owner, so saving it again moves it to whoever is logged in. `p256dh` and `auth` encrypt the push for that browser. Each user keeps their 10 newest. The push worker deletes a row when the push service answers `404` or `410`. Never logged |
+| `push_subscriptions` | One browser that wants Web Push (D-13) | `endpoint` is unique: one browser, one owner, so saving it again moves it to whoever is logged in. `p256dh` and `auth` encrypt the push for that browser. Each user keeps their 10 newest. The push worker deletes a row when the push service answers `404` or `410`, and the `core.events` listener deletes a user's rows on `user.deactivated`. Never logged |
 
 ## Redis
 
 Shared by both services. chatty-core uses it for rate-limit counters and to publish `core.events`,
-chatty-chat for its cache and to send channel events between its processes.
+chatty-chat for its cache, its own rate-limit counters and to send channel events between its processes.
 
 chatty-core's keys are counters that expire at the end of their window. If Redis is down, the limits are
 skipped (fail open).
@@ -51,6 +51,11 @@ skipped (fail open).
 | `files_upload:{user_id}` | Started uploads (`POST /files`) of one user | 30 per minute |
 
 `{ip}` is the client's real IP behind Nginx (D-09).
+
+chatty-chat's rate-limit counters work the same way, one per user and limit: `rate:{name}:{user_id}`,
+expiring a minute after the first request of the window (CHAT-286). `{name}` is `send`, `edit`, `delete`,
+`reactions`, `pins`, `read`, `history`, `events`, `sync`, `search` or `push`; the limits are in
+[auth and security](auth-and-security.md#rate-limits).
 
 chatty-chat caches chatty-core's internal answers (api-internal.md, Caching). If Redis is down, it asks
 chatty-core directly and caches nothing.

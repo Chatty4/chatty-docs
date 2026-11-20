@@ -48,7 +48,9 @@ sequenceDiagram
    | `team.deleted` | `version:all`, then every `channel:*` and `members:*` key (the event only has `team_id`) |
 
    The version stops a request that read chatty-core just before the change from caching its old answer
-   afterwards ([live events](../realtime.md#the-cache-and-its-versions)).
+   afterwards ([live events](../realtime.md#the-cache-and-its-versions)). On `user.deactivated` it also
+   deletes the user's push subscriptions, so their browsers stop getting previews (CHAT-282); a database
+   error there is logged and skipped.
 4. **The gateway** (`Gateway.handle_core_event`) updates open sockets on this process:
 
    | Event | Sockets |

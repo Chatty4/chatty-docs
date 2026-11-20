@@ -121,10 +121,10 @@ The upsert makes the second wait until the first commits, so 50 sends at once ge
 | DB error in the transaction | `500`; message, attachments, event row, seq and read position all roll back, and the files are detached |
 | chatty-core unreachable during attach | `503 core_unavailable`; nothing is detached, because the files may or may not be attached |
 | Redis down when publishing | Logged; still `201`. Other tabs get the message from `POST /sync` ([reconnect and sync](reconnect-and-sync.md)) |
+| More than 60 sends in a minute | `429 rate_limited` with `Retry-After`, before anything is checked. The web app shows "Not sent: too many messages." with a countdown, and Retry works once it reaches 0 ([rate limits](../auth-and-security.md#rate-limits)) |
 
 ## ⚠️ Known gaps
 
-- **No rate limit on sending.**
 - **A detach that keeps failing leaves files attached to no message.** It is tried once after a failed
   send, three times after a delete, then logged.
 
