@@ -97,6 +97,7 @@ sequenceDiagram
 | Events already cleaned up | `GET …/events`: `409 gap_too_large`; `POST /sync`: `gap_too_large: true` |
 | `POST /sync` with more than 500 channels or a negative `seq` | `400 validation_error` |
 | A channel in `POST /sync` I can't read any more | That channel's `error`; the others are answered |
+| Over a rate limit: history or events 120 a minute, `POST /sync` 20 a minute | `429 rate_limited` with `Retry-After` ([rate limits](../auth-and-security.md#rate-limits)). The web app fills a gap again after the wait, holding only that channel's events meanwhile. It doesn't retry a `POST /sync` after a `429`: every live message waits for the sync, so it lets them through and each channel catches up through its own gap fill |
 
 ## ⚠️ Known gaps
 

@@ -36,7 +36,7 @@ without foreign keys (D-01).
 ## Redis
 
 Shared by both services. chatty-core uses it for rate-limit counters and to publish `core.events`,
-chatty-chat for its cache and to send channel events between its processes.
+chatty-chat for its cache, its own rate-limit counters and to send channel events between its processes.
 
 chatty-core's keys are counters that expire at the end of their window. If Redis is down, the limits are
 skipped (fail open).
@@ -51,6 +51,11 @@ skipped (fail open).
 | `files_upload:{user_id}` | Started uploads (`POST /files`) of one user | 30 per minute |
 
 `{ip}` is the client's real IP behind Nginx (D-09).
+
+chatty-chat's rate-limit counters work the same way, one per user and limit: `rate:{name}:{user_id}`,
+expiring a minute after the first request of the window (CHAT-286). `{name}` is `send`, `edit`, `delete`,
+`reactions`, `pins`, `read`, `history`, `events`, `sync`, `search` or `push`; the limits are in
+[auth and security](auth-and-security.md#rate-limits).
 
 chatty-chat caches chatty-core's internal answers (api-internal.md, Caching). If Redis is down, it asks
 chatty-core directly and caches nothing.

@@ -90,7 +90,8 @@ read, is `400 invalid_cursor`, so pages of two searches can't mix.
 | `in` is a channel I can't read | `200` with no results |
 | A cursor from another search, or a broken one | `400 invalid_cursor` |
 | chatty-core unreachable and nothing cached | `503 core_unavailable` |
-| The web app: the search fails | The panel shows the error; "More results" can be tried again |
+| More than 30 searches in a minute | `429 rate_limited` with `Retry-After` ([rate limits](../auth-and-security.md#rate-limits)) |
+| The web app: the search fails | The panel shows the error, or "Too many searches. Try again in N seconds." after a `429`; "More results" can be tried again |
 | The web app: the message can't be loaded | A toast: "Couldn't load this message. Try again." |
 
 ## ⚠️ Known gaps
@@ -98,7 +99,6 @@ read, is `400 invalid_cursor`, so pages of two searches can't mix.
 - **English only.** Stems and stop words are English; other languages match only exact words.
 - **Uppercase mention IDs reach the index.** The `tsv` expression removes mentions with a lowercase-only
   pattern, so a `<@…>` written in uppercase is indexed as words.
-- **No rate limit**, like the rest of chatty-chat.
 - **The person filter can't pick me.** The web app leaves the current user out of the picker.
 
 ## Key code

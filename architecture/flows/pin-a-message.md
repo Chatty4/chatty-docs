@@ -103,6 +103,7 @@ Pinning doesn't move the read position.
 | Unpin one that isn't pinned | `204`, no event |
 | Two pins at 99 at once | One `201`, one `409 pin_limit_reached` |
 | The message is deleted at the same moment | The pin gets `409`, or lands first and is removed by the delete |
+| More than 20 pins and unpins in a minute | `429 rate_limited` with `Retry-After`; the web app shows the wait ([rate limits](../auth-and-security.md#rate-limits)) |
 
 ## ⚠️ Known gaps
 
