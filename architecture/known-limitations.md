@@ -42,6 +42,10 @@ What is not right yet, grouped by theme.
 - **Unread mentions are capped at 100, like unread messages.** The contract states the cap only for `unread`; capping both keeps `mentions` at most `unread` ([CHAT-208](https://assist-team-m66z4ph1.atlassian.net/browse/CHAT-208)).
 - **A detach that keeps failing leaves files attached to no message.** After a failed send it is tried once, after a delete three times, then logged; nothing retries it later.
 
+## Attachment search
+
+- **Attachment search only knows a fixed list of objects.** The labeler names what an image shows from a list of 35 words in `app/labeling/clip.py`; anything else gets the closest word from the list (a giraffe may be labeled "dog"). Changing the list needs a deploy, and files labeled before keep their old words until they are labeled again.
+- **Attachment search misses some files.** Only images, PDF, DOCX, XLSX, PPTX and text files are read, and only their first 200,000 characters. Videos and archives match by file name only. A file that fails 3 times is never labeled.
 
 ## Web
 
